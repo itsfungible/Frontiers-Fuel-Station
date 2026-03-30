@@ -301,7 +301,7 @@
         <div class="tc" id="tab-deposit">
             <div class="dep-section" style="position:relative">
                 <div class="dep-title">My SSU Fuel — Buy &amp; Donate</div>
-                <div class="dep-desc">Pick fuel detected in the station SSU and deposit it on-chain into station stock. Requires resolvable Character + OwnerCap context (EVE Vault in-game path).</div>
+                <div class="dep-desc">Pick fuel detected in the station SSU and deposit it on-chain into station stock. Requires resolvable Character + OwnerCap context (in-game wallet path).</div>
 
                 <div id="depLoading" style="text-align:center;padding:1rem">
                     <div class="spin" style="margin:0 auto 0.5rem"></div>
@@ -740,7 +740,7 @@ var FS = (function() {
         if (msg.indexOf('EInsufficientPayment') >= 0) return 'Not enough SUI to cover the purchase.';
         if (msg.indexOf('InsufficientCoinBalance') >= 0 || msg.toLowerCase().indexOf('insufficient') >= 0) return 'Not enough SUI for the transaction or gas fees.';
         if (msg.indexOf('borrow_child_object') >= 0) return 'Owner cap or inventory path was not found. The SSU inventory structure may have changed.';
-        if (msg.indexOf('ESenderCannotAccessCharacter') >= 0) return 'This wallet cannot access the current Character. Make sure you opened the page in the correct in-game EVE Vault.';
+        if (msg.indexOf('ESenderCannotAccessCharacter') >= 0) return 'This wallet cannot access the current Character. Make sure you opened the page in the correct in-game wallet.';
         return msg || 'Transaction failed';
     }
 
@@ -874,7 +874,7 @@ var FS = (function() {
         try {
             var wallets = await discoverWallets(6000);
             var wallet = pickWallet(wallets);
-            if (!wallet) throw new Error('No Sui wallet detected. Open this page inside the EVE Frontiers in-game browser (EVE Vault).');
+            if (!wallet) throw new Error('No Sui wallet detected. Open this page inside the EVE Frontiers in-game browser.');
             walletInstance = wallet;
             if (wallet.features && wallet.features['standard:connect']) {
                 var result = await wallet.features['standard:connect'].connect();
@@ -932,7 +932,7 @@ var FS = (function() {
         toast('State reset to defaults', 'i');
     }
 
-    function hasEveVaultContext() {
+    function hasInGameWalletContext() {
         return walletInstance && String(walletInstance.name || '').toLowerCase().indexOf('eve vault') >= 0;
     }
 
@@ -958,7 +958,7 @@ var FS = (function() {
             S.wallet.hasOwnerCap = !!(ctx && ctx.ownerCapId);
             S.wallet.characterId = (ctx && ctx.characterId) || '';
             S.wallet.ownerCapId = (ctx && ctx.ownerCapId) || '';
-            S.wallet.status = (S.wallet.hasCharacter && S.wallet.hasOwnerCap) ? 'eve-vault-ready' : 'eve-vault-missing-context';
+            S.wallet.status = (S.wallet.hasCharacter && S.wallet.hasOwnerCap) ? 'ingame-wallet-ready' : 'ingame-wallet-missing-context';
             S.wallet.ctxError = '';
             if (S.wallet.hasCharacter && S.wallet.hasOwnerCap) {
                 try { await ensureExtensionAuthorized(ctx); } catch (extErr) { console.warn('[fuel-station] extension setup skipped/failed', extErr); }
@@ -968,7 +968,7 @@ var FS = (function() {
             S.wallet.hasOwnerCap = false;
             S.wallet.characterId = '';
             S.wallet.ownerCapId = '';
-            S.wallet.status = 'eve-vault-missing-context';
+            S.wallet.status = 'ingame-wallet-missing-context';
             S.wallet.ctxError = (e && e.message) ? e.message : String(e);
         }
         saveState();
@@ -1302,11 +1302,11 @@ var FS = (function() {
         if (txBusy) { toast('Transaction already in progress…', 'i'); return; }
         var f = fuelById(pendingBuy.fuelId);
         if (!S.wallet.hasCharacter || !S.wallet.hasOwnerCap) {
-            toast('Buy requires gameplay context (Character + OwnerCap). Open in-game EVE Vault and reconnect.', 'i');
+            toast('Buy requires gameplay context (Character + OwnerCap). Open in-game wallet and reconnect.', 'i');
             closeDeliverModal();
             return;
         }
-        setModalProcessing('Processing Buy', 'Signing and submitting on-chain transaction…', ['Sign transaction in EVE Vault', 'Submitting buy_fuel', 'Waiting for chain confirmation']);
+        setModalProcessing('Processing Buy', 'Signing and submitting on-chain transaction…', ['Sign transaction in in-game wallet', 'Submitting buy_fuel', 'Waiting for chain confirmation']);
         try {
             var digest = await executeTxFlow({
                 label: 'buy_fuel',
@@ -1361,11 +1361,11 @@ var FS = (function() {
         if (txBusy) { toast('Transaction already in progress…', 'i'); return; }
         var f = fuelById(pendingDelivery.fuelId);
         if (!S.wallet.hasCharacter || !S.wallet.hasOwnerCap) {
-            toast('Deliver requires gameplay context (Character + OwnerCap). Open in-game EVE Vault and reconnect.', 'i');
+            toast('Deliver requires gameplay context (Character + OwnerCap). Open in-game wallet and reconnect.', 'i');
             closeDeliverModal();
             return;
         }
-        setModalProcessing('Processing Delivery', 'Signing and submitting on-chain transaction…', ['Sign transaction in EVE Vault', 'Submitting deliver_fuel', 'Waiting for chain confirmation']);
+        setModalProcessing('Processing Delivery', 'Signing and submitting on-chain transaction…', ['Sign transaction in in-game wallet', 'Submitting deliver_fuel', 'Waiting for chain confirmation']);
         try {
             var digest2 = null;
             try {
@@ -1415,8 +1415,8 @@ var FS = (function() {
         var qty = parseInt(inp && inp.value, 10) || 0;
         if (qty > 0) {
             var payout = calcPayout(fuelId, qty);
-            if (sub) sub.textContent = payout > 0 ? sui(payout) + ' SUI' : 'Requires EVE Vault';
-            if (tot) tot.innerHTML = payout > 0 ? 'Est. payout: <strong style="color:var(--green)">' + sui(payout) + ' SUI</strong> for ' + qty + ' units' : 'Requires in-game EVE Vault Character + OwnerCap';
+            if (sub) sub.textContent = payout > 0 ? sui(payout) + ' SUI' : 'Requires in-game wallet';
+            if (tot) tot.innerHTML = payout > 0 ? 'Est. payout: <strong style="color:var(--green)">' + sui(payout) + ' SUI</strong> for ' + qty + ' units' : 'Requires in-game wallet Character + OwnerCap';
             if (btn) btn.disabled = !S.wallet.connected;
         } else {
             if (sub) sub.textContent = '—';
@@ -1459,8 +1459,8 @@ var FS = (function() {
         if (S.wallet.connected) {
             var statusText = 'Connected';
             if (S.wallet.status === 'checking') statusText = 'Checking player context…';
-            else if (S.wallet.status === 'eve-vault-ready') statusText = 'EVE Vault ready';
-            else if (S.wallet.status === 'eve-vault-missing-context') statusText = 'EVE Vault found, but no character/owner cap yet';
+            else if (S.wallet.status === 'ingame-wallet-ready') statusText = 'In-game wallet ready';
+            else if (S.wallet.status === 'ingame-wallet-missing-context') statusText = 'In-game wallet found, but no character/owner cap yet';
             else if (S.wallet.status === 'browser-wallet') statusText = 'Browser wallet connected';
             info.innerHTML = '<div class="lbl">Wallet</div><div class="addr">' + shortId(S.wallet.address) + '</div><div class="bal">' + sui(S.wallet.balance) + ' SUI</div><div class="lbl" style="margin-top:0.2rem">' + (S.wallet.name || 'Wallet') + ' · ' + statusText + '</div>';
             btn.textContent = 'Disconnect';
@@ -1483,7 +1483,7 @@ var FS = (function() {
             (S.live.contractSync ? 'Contract sync: <strong>' + new Date(S.live.contractSync).toLocaleTimeString() + '</strong>. ' : '') +
             (S.live.syncError ? 'Inventory issue: <strong>' + S.live.syncError + '</strong>. ' : '') +
             (S.live.contractError ? 'Contract issue: <strong>' + S.live.contractError + '</strong>. ' : '') +
-            '<strong>Buy</strong>, <strong>Deliver</strong>, and <strong>Donate Fuel</strong> are intended to run in the in-game browser via EVE Vault context (Character + OwnerCap).';
+            '<strong>Buy</strong>, <strong>Deliver</strong>, and <strong>Donate Fuel</strong> are intended to run in the in-game browser via in-game wallet context (Character + OwnerCap).';
         renderDiagnostics();
     }
 
@@ -1706,7 +1706,7 @@ var FS = (function() {
         var f = fuelById(pendingDelivery.fuelId), body = el('deliverModalBody');
         el('deliverModalTitle').textContent = 'Confirm Delivery';
         el('deliverModalSub').textContent = 'Review the delivery before continuing.';
-        body.innerHTML = '<div class="confirm-grid"><div class="confirm-item"><div class="k">Fuel</div><div class="v">' + f.name + '</div></div><div class="confirm-item"><div class="k">Quantity</div><div class="v">' + pendingDelivery.qty + ' units</div></div><div class="confirm-item"><div class="k">Destination</div><div class="v">Station SSU</div></div><div class="confirm-item"><div class="k">Estimated Payout</div><div class="v green">' + (pendingDelivery.payout > 0 ? sui(pendingDelivery.payout) + ' SUI' : 'Requires gameplay context') + '</div></div></div><div class="confirm-note">Delivering fuel on-chain requires a resolvable Character + OwnerCap context, typically through in-game EVE Vault. If that context exists, this modal will sign, submit, wait for digest, then refresh.</div><div class="confirm-actions"><button class="btn btn-ghost" onclick="FS.closeDeliverModal()">Cancel</button><button class="btn btn-g" onclick="FS.confirmDeliverFlow()">Confirm Delivery</button></div>';
+        body.innerHTML = '<div class="confirm-grid"><div class="confirm-item"><div class="k">Fuel</div><div class="v">' + f.name + '</div></div><div class="confirm-item"><div class="k">Quantity</div><div class="v">' + pendingDelivery.qty + ' units</div></div><div class="confirm-item"><div class="k">Destination</div><div class="v">Station SSU</div></div><div class="confirm-item"><div class="k">Estimated Payout</div><div class="v green">' + (pendingDelivery.payout > 0 ? sui(pendingDelivery.payout) + ' SUI' : 'Requires gameplay context') + '</div></div></div><div class="confirm-note">Delivering fuel on-chain requires a resolvable Character + OwnerCap context, typically through in-game wallet. If that context exists, this modal will sign, submit, wait for digest, then refresh.</div><div class="confirm-actions"><button class="btn btn-ghost" onclick="FS.closeDeliverModal()">Cancel</button><button class="btn btn-g" onclick="FS.confirmDeliverFlow()">Confirm Delivery</button></div>';
         el('deliverModal').classList.add('show');
     }
 
@@ -1731,7 +1731,7 @@ var FS = (function() {
         if (!selDepFuel || qty <= 0) { return; }
         if (!S.wallet.connected) { toast('Connect wallet first', 'e'); return; }
         if (!S.wallet.hasCharacter || !S.wallet.hasOwnerCap) {
-            toast('This wallet is connected, but gameplay context is missing (Character + OwnerCap). Open via in-game EVE Vault and reconnect.', 'e');
+            toast('This wallet is connected, but gameplay context is missing (Character + OwnerCap). Open via in-game wallet and reconnect.', 'e');
             return;
         }
         var inSSU = Number((ssuInv && ssuInv[selDepFuel]) || 0);
