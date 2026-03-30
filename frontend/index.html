@@ -1,0 +1,1831 @@
+<!doctype html>
+<html lang="en" style="color-scheme: dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Fuel Station — EVE Frontiers</title>
+    <script type="importmap">
+    {
+        "imports": {
+            "@mysten/sui/client": "https://esm.sh/@mysten/sui@1.45.2/client",
+            "@mysten/sui/transactions": "https://esm.sh/@mysten/sui@1.45.2/transactions"
+        }
+    }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0a; --surface: #0f0f0f; --surface2: #161616; --border: #252525;
+            --orange: #ff6600; --orange-dim: rgba(255,102,0,0.15);
+            --green: #00ff41; --red: #ff3333; --amber: #ffb300;
+            --text: #d0d0d0; --text-dim: #555; --text-bright: #fff;
+            --mono: 'JetBrains Mono', monospace;
+        }
+        *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+        body{background:var(--bg);color:var(--text);font-family:var(--mono);min-height:100vh;line-height:1.5;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+        .glow{position:fixed;top:0;left:0;right:0;height:500px;pointer-events:none;background:radial-gradient(ellipse at 50% -10%,rgba(255,102,0,0.04) 0%,transparent 70%);z-index:0}
+        .container{max-width:640px;margin:0 auto;padding:1.5rem;position:relative;z-index:1}
+        .header{text-align:center;margin-bottom:2rem;padding-bottom:1.5rem;border-bottom:1px solid var(--border)}
+        .logo{font-size:0.6rem;letter-spacing:0.2em;color:var(--text-dim);margin-bottom:1rem}
+        .logo span{color:var(--orange)}
+        .header h1{font-size:1.2rem;font-weight:600;color:var(--text-bright);letter-spacing:0.05em;margin-bottom:0.35rem}
+        .header p{font-size:0.65rem;color:var(--text-dim)}
+        /* Wallet bar */
+        .wallet-bar{display:flex;align-items:center;justify-content:space-between;background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:0.6rem 1rem;margin-bottom:1.5rem;font-size:0.6rem;gap:0.5rem;flex-wrap:wrap}
+        .wallet-info{display:flex;flex-direction:column;gap:0.15rem}
+        .wallet-bar .addr{color:var(--green);font-weight:500}
+        .wallet-bar .bal{color:var(--orange);font-weight:600}
+        .wallet-bar .lbl{color:var(--text-dim);font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase}
+        .wallet-bar .nc{color:var(--amber)}
+        .wallet-actions{display:flex;gap:0.4rem;align-items:center}
+        .mode-badge{display:none !important}
+        .mode-badge.live-readonly{color:var(--amber);border-color:rgba(255,179,0,0.3)}
+        .mode-badge.demo{color:var(--orange);border-color:rgba(255,102,0,0.3)}
+        .mode-badge.live{color:var(--green);border-color:rgba(0,255,65,0.25)}
+        .live-note{display:none !important}
+        .live-note strong{color:var(--text-bright)}
+        /* Stats */
+        .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:0.6rem;margin-bottom:1.5rem}
+        .stat{background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:0.75rem 0.4rem;text-align:center}
+        .stat-value{font-size:1rem;font-weight:700;color:var(--orange)}
+        .stat-value.green{color:var(--green)}
+        .stat-label{font-size:0.45rem;letter-spacing:0.12em;color:var(--text-dim);text-transform:uppercase;margin-top:0.3rem}
+        /* Tabs */
+        .tabs{display:flex;margin-bottom:1.5rem;border-bottom:1px solid var(--border)}
+        .tab{flex:1;padding:0.7rem;font-family:var(--mono);font-size:0.6rem;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;text-align:center;color:var(--text-dim);background:none;border:none;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.2s}
+        .tab:hover{color:var(--text)}
+        .tab.active{color:var(--orange);border-bottom-color:var(--orange)}
+        .tc{display:none}.tc.active{display:block}
+        /* Fuel grid */
+        .fuel-grid{display:grid;grid-template-columns:1fr;gap:0.6rem;margin-bottom:1.5rem}
+        /* Fuel card */
+        .fc{background:var(--surface);border:1px solid var(--border);border-radius:3px;cursor:pointer;transition:border-color 0.2s,box-shadow 0.25s;overflow:hidden;position:relative}
+        .fc:hover{border-color:#444}
+        .fc.active{border-color:var(--orange);box-shadow:0 0 0 1px var(--orange),0 4px 20px rgba(255,102,0,0.12)}
+        .fc.out{opacity:0.35;cursor:not-allowed}
+        .fc-pad{padding:1rem 1rem 0.75rem;text-align:center}
+        .fc-badge{position:absolute;top:8px;right:8px;font-size:0.4rem;font-weight:600;letter-spacing:0.1em;padding:2px 6px;border-radius:2px;text-transform:uppercase}
+        .badge-avail{background:rgba(0,255,65,0.1);color:var(--green)}
+        .badge-empty{background:rgba(255,51,51,0.1);color:var(--red)}
+        .badge-ylo{background:rgba(255,179,0,0.1);color:var(--amber)}
+        .fc-img{width:40px;height:40px;border-radius:3px;margin:0 auto 0.5rem;display:block;image-rendering:pixelated}
+        .fc-noimg{width:40px;height:40px;border-radius:3px;margin:0 auto 0.5rem;background:var(--surface2);border:1px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:0.5rem;color:var(--text-dim)}
+        .fc-name{font-size:0.65rem;font-weight:600;color:var(--text-bright);margin-bottom:0.1rem}
+        .fc-group{font-size:0.45rem;color:var(--text-dim);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:0.5rem}
+        .fc-bar{height:3px;background:var(--surface2);border-radius:2px;margin-bottom:0.35rem;overflow:hidden}
+        .fc-fill{height:100%;border-radius:2px;transition:width 0.6s}
+        .fc-fill.g{background:var(--green)}.fc-fill.y{background:var(--amber)}.fc-fill.r{background:var(--red)}
+        .fc-qty{font-size:0.5rem;color:var(--text-dim);margin-bottom:0.1rem}.fc-qty strong{color:var(--text)}
+        .fc-price{font-size:0.55rem;color:var(--orange);font-weight:600}
+        /* Expanded */
+        .fc-expanded{display:none;padding:1rem 1.25rem 1.25rem;border-top:1px solid var(--border);background:var(--surface2)}
+        .fc.expanded .fc-expanded{display:block;animation:expOpen 0.25s ease}
+        @keyframes expOpen{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+        .fc-exp-info{display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem}
+        .fc-exp-img{width:36px;height:36px;border-radius:3px;image-rendering:pixelated;flex-shrink:0}
+        .fc-exp-noimg{width:36px;height:36px;border-radius:3px;flex-shrink:0;background:var(--surface);border:1px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:0.45rem;color:var(--text-dim)}
+        .fc-exp-noimg::after{content:''}
+        .fc-exp-name{font-size:0.75rem;font-weight:600;color:var(--text-bright)}
+        .fc-exp-grp{font-size:0.5rem;color:var(--text-dim);margin-top:0.1rem}
+        .fc-exp-bdg{font-size:0.4rem;font-weight:600;letter-spacing:0.08em;padding:3px 8px;border-radius:2px;margin-left:auto;flex-shrink:0}
+        .fc-exp-bar{height:4px;background:var(--bg);border-radius:2px;margin-bottom:0.5rem;overflow:hidden}
+        .fc-exp-bar-fill{height:100%;border-radius:2px;transition:width 0.6s}
+        .fc-exp-sts{display:flex;gap:1rem;margin-bottom:0.75rem;flex-wrap:wrap}
+        .fc-exp-st{font-size:0.55rem;color:var(--text-dim)}
+        .fc-exp-st strong{color:var(--text-bright)}
+        .fc-exp-st .price{color:var(--orange);font-weight:600}
+        .fc-exp-st .payout{color:var(--green);font-weight:600}
+        .fc-exp-row{display:flex;gap:0.75rem;align-items:flex-end;margin-bottom:0.5rem}
+        .fc-exp-row .f{flex:1}
+        .fc-exp-row .f label{display:block;font-size:0.5rem;letter-spacing:0.1em;color:var(--text-dim);text-transform:uppercase;margin-bottom:0.3rem}
+        .fc-exp-row .f input{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text-bright);font-family:var(--mono);font-size:0.75rem;padding:0.6rem 0.75rem;border-radius:3px;outline:none}
+        .fc-exp-row .f input:focus{border-color:var(--orange)}
+        .fc-exp-sub{font-size:0.55rem;color:var(--text-dim);margin-top:0.25rem}
+        .fc-exp-sub strong{color:var(--text-bright)}
+        .fc-total{font-size:0.5rem;color:var(--text-dim);margin-top:0.4rem}.fc-total strong{color:var(--orange)}
+        /* How it works */
+        .how{background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:1.25rem;margin-bottom:1.5rem}
+        .how h3{font-size:0.6rem;font-weight:600;letter-spacing:0.12em;color:var(--orange);text-transform:uppercase;margin-bottom:1rem}
+        .how-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:0.75rem}
+        .step{display:flex;gap:0.75rem;margin-bottom:0}
+        .step-n{flex-shrink:0;width:24px;height:24px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);font-size:0.55rem;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:2px}
+        .step-c{flex:1}.step-t{font-size:0.6rem;font-weight:600;color:var(--text-bright);margin-bottom:0.2rem}
+        .step-d{font-size:0.55rem;color:var(--text-dim);line-height:1.6}.step-d .hl{color:var(--text-bright);font-weight:500}.step-d .or{color:var(--orange);font-weight:600}
+        .payout-box{display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.75rem;margin-top:1rem}
+        .payout-box .lbl{font-size:0.5rem;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase}
+        .payout-box .val{font-size:1rem;font-weight:700;color:var(--green)}
+        /* Deliver selector */
+        .deliver-picker{display:grid;grid-template-columns:repeat(2,1fr);gap:0.5rem;margin-bottom:1rem}
+        .deliver-btn{background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:0.75rem;cursor:pointer;transition:transform 0.16s ease,border-color 0.16s ease,box-shadow 0.2s ease;text-align:left}
+        .deliver-btn:hover{border-color:#444;transform:translateY(-1px)}
+        .deliver-btn.active{border-color:var(--orange);box-shadow:0 0 0 1px var(--orange),0 4px 20px rgba(255,102,0,0.10)}
+        .deliver-btn-top{display:flex;align-items:center;gap:0.55rem;margin-bottom:0.35rem}
+        .deliver-btn-icon{width:24px;height:24px;border-radius:3px;image-rendering:pixelated;flex-shrink:0}
+        .deliver-btn-noimg{width:24px;height:24px;border-radius:3px;background:var(--surface2);border:1px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:0.45rem;color:var(--text-dim);flex-shrink:0}
+        .deliver-btn-noimg::after{content:''}
+        .deliver-btn-name{font-size:0.56rem;font-weight:600;color:var(--text-bright)}
+        .deliver-btn-meta{font-size:0.44rem;color:var(--text-dim);line-height:1.4}
+        .deliver-panel{background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:1rem 1rem 1.1rem;animation:deliverFade 0.18s ease}
+        @keyframes deliverFade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+        .deliver-empty{padding:1.2rem;text-align:center;color:var(--text-dim);font-size:0.58rem;border:1px dashed var(--border);border-radius:3px;background:var(--surface)}
+        .deliver-head{display:flex;align-items:center;gap:0.75rem;margin-bottom:0.9rem}
+        .deliver-head-copy{flex:1}
+        .deliver-title{font-size:0.8rem;font-weight:600;color:var(--text-bright)}
+        .deliver-sub{font-size:0.5rem;color:var(--text-dim);margin-top:0.1rem}
+        .deliver-badge{font-size:0.42rem;font-weight:600;letter-spacing:0.08em;padding:3px 8px;border-radius:2px}
+        .deliver-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:0.5rem;margin-bottom:0.8rem}
+        .deliver-stat{background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.7rem}
+        .deliver-stat .k{font-size:0.45rem;color:var(--text-dim);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:0.25rem}
+        .deliver-stat .v{font-size:0.7rem;color:var(--text-bright);font-weight:600}
+        .deliver-stat .v.green{color:var(--green)}
+        .deliver-input{display:flex;gap:0.75rem;align-items:flex-end;margin-top:0.6rem}
+        .deliver-input .f{flex:1}
+        .deliver-input label{display:block;font-size:0.5rem;letter-spacing:0.1em;color:var(--text-dim);text-transform:uppercase;margin-bottom:0.3rem}
+        .deliver-input input{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text-bright);font-family:var(--mono);font-size:0.75rem;padding:0.6rem 0.75rem;border-radius:3px;outline:none;transition:border-color 0.15s ease}
+        .deliver-input input:focus{border-color:var(--orange)}
+        .deliver-est{font-size:0.55rem;color:var(--text-dim);margin-top:0.45rem;min-height:1.2em}
+        .deliver-est strong{color:var(--green)}
+        /* Delivery confirm */
+        .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.72);display:none;align-items:center;justify-content:center;padding:1rem;z-index:300}
+        .modal-backdrop.show{display:flex}
+        .modal{width:min(460px,100%);background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:1rem 1rem 1.1rem;box-shadow:0 20px 60px rgba(0,0,0,0.45);animation:expOpen 0.18s ease}
+        .modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:0.85rem}
+        .modal-title{font-size:0.72rem;font-weight:700;color:var(--text-bright);letter-spacing:0.06em;text-transform:uppercase}
+        .modal-sub{font-size:0.52rem;color:var(--text-dim);margin-top:0.2rem;line-height:1.5}
+        .modal-close{background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:3px;width:28px;height:28px;cursor:pointer}
+        .confirm-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:0.5rem;margin-bottom:0.8rem}
+        .confirm-item{background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.7rem}
+        .confirm-item .k{font-size:0.45rem;color:var(--text-dim);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:0.25rem}
+        .confirm-item .v{font-size:0.68rem;color:var(--text-bright);font-weight:600}
+        .confirm-item .v.green{color:var(--green)}
+        .confirm-note{font-size:0.53rem;color:var(--text-dim);line-height:1.6;background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.75rem;margin-bottom:0.85rem}
+        .confirm-actions{display:flex;gap:0.6rem;justify-content:flex-end}
+        .confirm-status{display:flex;flex-direction:column;gap:0.45rem;margin-top:0.2rem}
+        .status-row{display:flex;align-items:center;gap:0.6rem;background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.65rem 0.75rem;font-size:0.56rem;color:var(--text-dim)}
+        .status-dot{width:10px;height:10px;border-radius:50%;background:var(--text-dim);flex-shrink:0}
+        .status-row.active .status-dot{background:var(--orange);box-shadow:0 0 0 4px rgba(255,102,0,0.10)}
+        .status-row.done .status-dot{background:var(--green);box-shadow:0 0 0 4px rgba(0,255,65,0.08)}
+        .status-row.active{color:var(--text-bright);border-color:#444}
+        .status-row.done{color:var(--text)}
+        /* History */
+        .tx-list{display:flex;flex-direction:column;gap:0.5rem}
+        .tx-empty{text-align:center;color:var(--text-dim);font-size:0.6rem;padding:2rem}
+        .tx-item{background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:0.75rem 1rem;display:flex;align-items:center;gap:0.75rem}
+        .tx-icon{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.7rem;flex-shrink:0}
+        .tx-icon.buy{background:rgba(255,102,0,0.15);color:var(--orange)}
+        .tx-icon.deliver{background:rgba(0,255,65,0.12);color:var(--green)}
+        .tx-body{flex:1;min-width:0}
+        .tx-title{font-size:0.6rem;font-weight:600;color:var(--text-bright)}
+        .tx-detail{font-size:0.5rem;color:var(--text-dim);margin-top:0.1rem}
+        .tx-amount{font-size:0.65rem;font-weight:700;text-align:right;flex-shrink:0}
+        .tx-amount.buy{color:var(--orange)}
+        .tx-amount.deliver{color:var(--green)}
+        .tx-time{font-size:0.4rem;color:var(--text-dim);text-align:right}
+        /* Buttons */
+        .btn{padding:0.6rem 1.2rem;font-family:var(--mono);font-size:0.6rem;font-weight:600;letter-spacing:0.1em;border:1px solid var(--border);border-radius:3px;cursor:pointer;transition:all 0.2s;text-transform:uppercase}
+        .btn-p{background:var(--orange);color:var(--bg);border-color:var(--orange)}.btn-p:hover{transform:translateY(-1px);box-shadow:0 4px 20px rgba(255,102,0,0.25)}.btn-p:disabled{opacity:0.4;cursor:not-allowed;transform:none;box-shadow:none}
+        .btn-g{background:var(--green);color:var(--bg);border-color:var(--green)}.btn-g:hover{box-shadow:0 4px 20px rgba(0,255,65,0.2)}.btn-g:disabled{opacity:0.4;cursor:not-allowed}
+        .btn-s{padding:0.5rem 0.8rem;font-size:0.55rem}
+        .btn-ghost{background:transparent;color:var(--text-dim);border-color:var(--border);font-size:0.45rem;padding:0.35rem 0.6rem}
+        .btn-ghost:hover{color:var(--text);border-color:#444}
+        /* Toast */
+        .toast-c{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);z-index:160;display:flex;flex-direction:column;gap:0.5rem;align-items:center;pointer-events:none;max-width:90%}
+        .toast{pointer-events:auto;padding:0.6rem 1.2rem;border-radius:3px;font-family:var(--mono);font-size:0.6rem;letter-spacing:0.05em;animation:ti 0.3s ease;max-width:480px;text-align:center;line-height:1.5}
+        .toast-s{background:rgba(0,255,65,0.12);border:1px solid var(--green);color:var(--green)}
+        .toast-e{background:rgba(255,51,51,0.12);border:1px solid var(--red);color:var(--red)}
+        .toast-i{background:rgba(255,102,0,0.12);border:1px solid var(--orange);color:var(--orange)}
+        @keyframes ti{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+        .spin{width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--orange);border-radius:50%;animation:spin 0.8s linear infinite}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        .spin-anim{-webkit-animation:spin 0.8s linear infinite;animation:spin 0.8s linear infinite}
+        /* Deposit tab */
+        .dep-section{background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:1.25rem;margin-bottom:1rem;position:relative}
+        .dep-title{font-size:0.65rem;font-weight:600;letter-spacing:0.1em;color:var(--orange);text-transform:uppercase;margin-bottom:0.5rem}
+        .dep-desc{font-size:0.55rem;color:var(--text-dim);line-height:1.6;margin-bottom:1rem}
+        .btn-refresh{position:absolute;bottom:1rem;right:1rem;background:none;border:1px solid var(--border);color:var(--text-dim);font-size:0.75rem;width:28px;height:28px;border-radius:3px;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;justify-content:center}
+        .btn-refresh:hover{border-color:var(--orange);color:var(--orange)}
+        .btn-refresh.spinning{animation:spin 0.6s linear;pointer-events:none}
+        .dep-inv-row{display:flex;gap:0.75rem;align-items:flex-start}
+        .dep-fuel-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:0.5rem;flex:1}
+        .dep-fuel-item{background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.6rem;cursor:pointer;transition:border-color 0.2s}
+        .dep-fuel-item:hover{border-color:#444}
+        .dep-fuel-item.active{border-color:var(--orange)}
+        .dep-fuel-item.out{opacity:0.4;cursor:not-allowed}
+        .dep-fuel-name{font-size:0.6rem;font-weight:600;color:var(--text-bright);margin-bottom:0.1rem}
+        .dep-fuel-meta{font-size:0.45rem;color:var(--text-dim)}
+        .dep-fuel-stock{font-size:0.5rem;color:var(--green);margin-top:0.2rem}
+        .dep-deposit-col{display:flex;flex-direction:column;gap:0.4rem;min-width:110px}
+        .dep-sel-name{font-size:0.5rem;color:var(--text-dim);min-height:1em;text-align:center}
+        .dep-deposit-col input{background:var(--bg);border:1px solid var(--border);color:var(--text-bright);font-family:var(--mono);font-size:0.7rem;padding:0.5rem 0.6rem;border-radius:3px;outline:none;width:100%}
+        .dep-deposit-col input:focus{border-color:var(--orange)}
+        .buy-result{background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:0.95rem 1rem;margin-bottom:1rem}
+        .buy-result.hidden{display:none}
+        .buy-result-head{display:flex;align-items:center;justify-content:space-between;gap:0.75rem;margin-bottom:0.65rem}
+        .buy-result-title{font-size:0.58rem;font-weight:600;letter-spacing:0.12em;color:var(--orange);text-transform:uppercase}
+        .buy-result-status{font-size:0.48rem;color:var(--text-dim)}
+        .buy-result-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:0.5rem;margin-bottom:0.7rem}
+        .buy-result-item{background:var(--surface2);border:1px solid var(--border);border-radius:3px;padding:0.65rem 0.75rem}
+        .buy-result-item .k{font-size:0.44rem;color:var(--text-dim);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:0.22rem}
+        .buy-result-item .v{font-size:0.6rem;color:var(--text-bright);font-weight:600;word-break:break-word}
+        .buy-result-note{font-size:0.54rem;color:var(--text-dim);line-height:1.6;margin-bottom:0.7rem}
+        .buy-result-note strong{color:var(--text-bright)}
+        .buy-result-actions{display:flex;align-items:center;gap:0.55rem;flex-wrap:wrap}
+        .buy-result-actions .mini{font-size:0.48rem;color:var(--text-dim)}
+        /* Responsive */
+        @media(max-width:600px){
+            .container{padding:1rem}
+            .header h1{font-size:1rem}
+            .stats{grid-template-columns:repeat(3,1fr);gap:0.4rem}
+            .stat{padding:0.5rem 0.3rem}
+            .stat-value{font-size:0.75rem}
+            .how-grid,.deliver-picker,.deliver-stats,.owner-grid,.owner-form{grid-template-columns:1fr}
+            .deliver-input{flex-direction:column;align-items:stretch}
+        }
+    </style>
+</head>
+<body>
+    <div class="glow"></div>
+    <div class="container">
+        <div class="header">
+            <div class="logo"><span>EVE</span> FRONTIERS</div>
+            <h1>Fuel Station</h1>
+            <p>Buy fuel. Deliver fuel. Earn SUI.</p>
+        </div>
+
+        <div class="wallet-bar" id="walletBar">
+            <div class="wallet-info" id="walletInfo">
+                <div class="lbl">Wallet</div>
+                <div class="nc" id="wstatus">Not connected</div>
+            </div>
+            <div class="wallet-actions">
+                <div class="mode-badge" id="modeBadge">Mode</div>
+                <button class="btn btn-ghost" id="btnReset" style="display:none" onclick="FS.reset()">Reset</button>
+                <button class="btn btn-s btn-p" id="btnConn" onclick="FS.connect()">Connect</button>
+            </div>
+        </div>
+
+        <div class="live-note" id="liveNote"></div>
+        <div class="live-note" id="ctxDiag" style="display:none;margin-top:-0.4rem;white-space:pre-line"></div>
+
+        <div class="stats">
+            <div class="stat"><div class="stat-value" id="sStock">—</div><div class="stat-label">Total Stock</div></div>
+            <div class="stat"><div class="stat-value" id="sAvgPrice">—</div><div class="stat-label">Avg Price</div></div>
+            <div class="stat"><div class="stat-value green" id="sEscrow">—</div><div class="stat-label">Escrow Pool</div></div>
+        </div>
+
+        <div class="tabs">
+            <button class="tab active" data-tab="buy" onclick="FS.tab('buy')">Buy Fuel</button>
+            <button class="tab" data-tab="deliver" onclick="FS.tab('deliver')">Deliver Fuel</button>
+            <button class="tab" data-tab="deposit" onclick="FS.tab('deposit')">My SSU Fuel</button>
+        </div>
+
+        <div class="tc active" id="tab-buy">
+            <div class="fuel-grid" id="buyGrid"></div>
+        </div>
+
+        <div class="tc" id="tab-deliver">
+            <div class="how">
+                <h3>How Delivering Works</h3>
+                <div class="how-grid">
+                    <div class="step"><div class="step-n">1</div><div class="step-c"><div class="step-t">Choose a fuel type</div><div class="step-d">Use the fuel buttons below to pick the exact <span class="hl">fuel</span> you want to deliver to the station.</div></div></div>
+                    <div class="step"><div class="step-n">2</div><div class="step-c"><div class="step-t">Check the delivery details</div><div class="step-d">Once selected, you’ll see the current <span class="hl">station stock</span>, <span class="hl">payout rate</span>, and your estimated return.</div></div></div>
+                    <div class="step"><div class="step-n">3</div><div class="step-c"><div class="step-t">Enter your quantity</div><div class="step-d">Type how many units you want to deliver. The panel will update your <span class="or">estimated payout</span> automatically.</div></div></div>
+                    <div class="step"><div class="step-n">4</div><div class="step-c"><div class="step-t">Deliver and get paid</div><div class="step-d">Press <span class="hl">Deliver</span> to restock the station. If the payout pool can cover it, the reward is paid to your wallet.</div></div></div>
+                </div>
+            </div>
+            <div class="deliver-picker" id="deliverPicker"></div>
+            <div id="deliverPanel"></div>
+        </div>
+
+        <div class="tc" id="tab-deposit">
+            <div class="dep-section" style="position:relative">
+                <div class="dep-title">My SSU Fuel — Buy &amp; Donate</div>
+                <div class="dep-desc">Pick fuel detected in the station SSU and deposit it on-chain into station stock. Requires resolvable Character + OwnerCap context (EVE Vault in-game path).</div>
+
+                <div id="depLoading" style="text-align:center;padding:1rem">
+                    <div class="spin" style="margin:0 auto 0.5rem"></div>
+                    <div style="font-size:0.55rem;color:var(--text-dim)">Loading SSU inventory...</div>
+                </div>
+                <div id="depEmpty" style="display:none;text-align:center;padding:1rem">
+                    <div style="font-size:0.55rem;color:var(--text-dim)">No fuel in your SSU inventory yet. Buy fuel → it lands here. Then donate to station or use Deliver tab to sell.</div>
+                </div>
+                <div id="depInvRow" style="display:none">
+                    <div class="dep-fuel-grid" id="ssuInvGrid"></div>
+                    <div class="dep-deposit-col">
+                        <div class="dep-sel-name" id="depSelName">Select fuel</div>
+                        <input type="number" id="depQty" placeholder="qty" min="1" oninput="FS.depQtyUpdate()">
+                        <button class="btn btn-p" id="btnDepFuel" disabled onclick="FS.depositFuel()">Donate Fuel</button>
+                    </div>
+                </div>
+
+                <button type="button" class="btn-refresh" onclick="FS.refreshSSU()" title="Refresh inventory">↻</button>
+            </div>
+        </div>
+
+        <div class="tc" id="tab-sell">
+            <div class="dep-section">
+                <div class="dep-title">Sell Fuel — Get SUI</div>
+                <div class="dep-desc">Sell fuel from your SSU inventory back to the station. Station pays SUI from its escrow pool.</div>
+                <div id="sellLoading" style="text-align:center;padding:1rem">
+                    <div class="spin" style="margin:0 auto 0.5rem"></div>
+                    <div style="font-size:0.55rem;color:var(--text-dim)">Loading your fuel...</div>
+                </div>
+                <div id="sellEmpty" style="display:none;text-align:center;padding:1rem">
+                    <div style="font-size:0.55rem;color:var(--text-dim)">No fuel in your SSU inventory to sell. Buy fuel first.</div>
+                </div>
+                <div id="sellInvRow" style="display:none">
+                    <div class="dep-fuel-grid" id="sellInvGrid"></div>
+                    <div class="dep-deposit-col">
+                        <div class="dep-sel-name" id="sellSelName">Select fuel</div>
+                        <input type="number" id="sellQty" placeholder="qty" min="1" oninput="FS.sellQtyUpdate()">
+                        <button class="btn btn-p" id="btnSellFuel" disabled onclick="FS.sellFuel()">Sell Fuel</button>
+                        <div class="dep-est" id="sellEst" style="margin-top:0.5rem;font-size:0.55rem;color:var(--text-dim)"></div>
+                    </div>
+                </div>
+                <button type="button" class="btn-refresh" onclick="FS.refreshSSU()" title="Refresh">↻</button>
+            </div>
+        </div>
+
+
+        
+
+        <div class="toast-c" id="toasts"></div>
+    </div>
+
+    <div class="modal-backdrop" id="deliverModal">
+        <div class="modal">
+            <div class="modal-head">
+                <div>
+                    <div class="modal-title" id="deliverModalTitle">Confirm Delivery</div>
+                    <div class="modal-sub" id="deliverModalSub">Review the transaction before continuing.</div>
+                </div>
+                <button class="modal-close" onclick="FS.closeDeliverModal()">✕</button>
+            </div>
+            <div id="deliverModalBody"></div>
+        </div>
+    </div>
+
+<script>
+var FS = (function() {
+    'use strict';
+
+    var CFG = Object.freeze({
+        mode: 'live',
+        network: 'stillness-testnet',
+        walletChain: 'sui:testnet',
+        rpcUrl: 'https://fullnode.testnet.sui.io:443',
+        relayUrl: '/fuel-station/relay',
+        relayToken: 'H8q7hgBrCylxGQc8dyjaWVnFmFiETorrPbABx4k84ik',
+        packageId: '0x48d1cc6d265cefeea826044100a3afaec919d6d3753c7b39628c751e84040735',
+        configObjectId: '0x314e55545ea374af136e1d55348e00dfa936baed6cd1a84ffdb94387618a69a7',
+        adminCapId: '0xe82505e776b95c01dc8edaaa8c050b5d3452737e3cfc1dee6a7047f3822ed0fb',
+        ssuId: '0x44ec4a2b33bf0233009e547212de846530ce89bfa82e23f4620d2912158a1f78',
+        ssuOpenInventoryId: '0xefb3f42e2e84352feafa6c1f7589725d6e72eeb64aacbaa7716dd1131d675c33',
+        worldPackageId: '0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c',
+        deployWallet: '0x3b5c796c386ef02a56a6a7cba5d508abce3005d3aad82bc87e2dda47576f6f87',
+        clockId: '0x6',
+        operatorCut: 15,
+        windowMs: 3600000,
+        storageKey: 'fuelStationState',
+        maxStock: 200,
+        refreshMs: 30000,
+        requireInGameWallet: true,
+        debugTx: false,
+        allowAutoInitOnMissingStation: false
+    });
+
+    var FUELS = [
+        { id: '77818', name: 'Unstable Fuel',  group: 'Hydrogen Fuel', eff: 50,  price: 0.001,  icon: '' },
+        { id: '78516', name: 'EU-40 Fuel',     group: 'Crude Fuel',    eff: 40,  price: 0.002,  icon: 'https://artifacts.evefrontier.com/types/78516.png' },
+        { id: '84868', name: 'SOF-40 Fuel',    group: 'Crude Fuel',    eff: 40,  price: 0.0018, icon: 'https://artifacts.evefrontier.com/types/84868.png' },
+        { id: '88335', name: 'D1 Fuel',        group: 'Hydrogen Fuel', eff: 60,  price: 0.003,  icon: 'https://artifacts.evefrontier.com/types/88335.png' },
+        { id: '88319', name: 'D2 Fuel',        group: 'Hydrogen Fuel', eff: 70,  price: 0.004,  icon: 'https://artifacts.evefrontier.com/types/88319.png' },
+        { id: '78515', name: 'SOF-80 Fuel',    group: 'Crude Fuel',    eff: 80,  price: 0.005,  icon: 'https://artifacts.evefrontier.com/types/78515.png' },
+        { id: '78437', name: 'EU-90 Fuel',     group: 'Crude Fuel',    eff: 100, price: 0.008,  icon: 'https://artifacts.evefrontier.com/types/78437.png' }
+    ];
+
+    function defaultState() {
+        return {
+            wallet: { address: '', balance: 0, connected: false, name: '', canTransact: false, status: 'not-connected', chainOk: false, hasCharacter: false, hasOwnerCap: false, characterId: '', ownerCapId: '', account: null, ctxError: '' },
+            live: { lastSync: '', inventorySource: 'mock', syncError: '', contractSync: '', contractError: '' },
+            station: {
+                escrow: 0,
+                ownerRevenue: 0,
+                operatorCut: CFG.operatorCut,
+                stock: { '78437': 120, '78515': 85, '78516': 60, '84868': 45, '77818': 200, '88335': 30, '88319': 20 },
+                fuelPools: {},
+                totalRevenue: 0,
+                totalFuelSold: 0,
+                totalDelivered: 0,
+                totalPaidRunners: 0
+            },
+            transactions: []
+        };
+    }
+
+    var S = loadState();
+    var selBuy = null, selDel = null, selDepFuel = null, currentTab = 'buy';
+    var pendingDelivery = null;
+    var pendingBuy = null;
+    var ssuInv = null;
+    var walletInstance = null;
+    var walletUnsubscribers = [];
+    var walletSyncNonce = 0;
+    var autoRefreshTimer = null;
+    var txBusy = false;
+
+    function loadState() {
+        try {
+            var raw = localStorage.getItem(CFG.storageKey);
+            if (raw) {
+                var s = JSON.parse(raw);
+                var def = defaultState();
+                s.wallet = Object.assign({}, def.wallet, s.wallet || {});
+                s.live = Object.assign({}, def.live, s.live || {});
+                s.station = Object.assign({}, def.station, s.station || {});
+                s.station.stock = Object.assign({}, def.station.stock, s.station.stock || {});
+                s.station.fuelPools = Object.assign({}, def.station.fuelPools, s.station.fuelPools || {});
+                FUELS.forEach(function(f) {
+                    s.station.fuelPools[f.id] = Object.assign({
+                        escrow: 0,
+                        windowStart: null,
+                        windowRevenue: 0,
+                        windowFuelSold: 0,
+                        windowDeliveries: 0,
+                        totalRevenue: 0,
+                        totalFuelSold: 0,
+                        totalDelivered: 0,
+                        totalPaidRunners: 0
+                    }, s.station.fuelPools[f.id] || {});
+                });
+                s.transactions = s.transactions || [];
+
+                return s;
+            }
+        } catch (e) {}
+        return defaultState();
+    }
+
+    function saveState() { try { localStorage.setItem(CFG.storageKey, JSON.stringify(S)); } catch (e) {} }
+    function ensureFuelPools() {
+        if (!S.station.fuelPools) S.station.fuelPools = {};
+        FUELS.forEach(function(f) {
+            if (!S.station.fuelPools[f.id]) S.station.fuelPools[f.id] = { escrow: 0, windowStart: null, windowRevenue: 0, windowFuelSold: 0, windowDeliveries: 0, totalRevenue: 0, totalFuelSold: 0, totalDelivered: 0, totalPaidRunners: 0 };
+        });
+    }
+
+    function el(id) { return document.getElementById(id); }
+    function sui(n) { return Number(n || 0).toFixed(4); }
+    function fuelById(id) { return FUELS.find(function(f) { return f.id === id; }); }
+    function shortId(v) { return !v ? '—' : (v.slice(0, 6) + '…' + v.slice(-4)); }
+    function txId() { return 'tx_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
+    function toast(msg, type) {
+        return; // disabled for clean demo
+    }
+    function isDemoMode() { return CFG.mode === 'demo'; }
+    function isLiveMode() { return CFG.mode === 'live'; }
+    function stockPct(id) { return Math.min(100, ((S.station.stock[id] || 0) / CFG.maxStock) * 100); }
+    function stockClass(pct) { return pct > 50 ? 'g' : pct > 20 ? 'y' : 'r'; }
+    function badgeInfo(sk) {
+        if (sk <= 0) return { cls: 'badge-empty', txt: 'Empty' };
+        var pct = (sk / CFG.maxStock) * 100;
+        if (pct > 50) return { cls: 'badge-avail', txt: 'Available' };
+        if (pct > 20) return { cls: 'badge-ylo', txt: 'Low Stock' };
+        return { cls: 'badge-empty', txt: 'Critical' };
+    }
+    function imgHtml(f, size) {
+        if (!f.icon) return '<div class="' + (size === 'sm' ? 'fc-exp-noimg' : 'fc-noimg') + '"></div>';
+        var cls = size === 'sm' ? 'fc-exp-img' : 'fc-img';
+        return '<img src="' + f.icon + '" class="' + cls + '" alt="' + f.name + '" onerror="this.outerHTML=\'<div class=&quot;' + (size === 'sm' ? 'fc-exp-noimg' : 'fc-noimg') + '&quot;></div>\'">';
+    }
+    function totalStock() { return Object.values(S.station.stock || {}).reduce(function(a, b) { return a + Number(b || 0); }, 0); }
+    function avgPrice() { return FUELS.reduce(function(sum, f) { return sum + Number(f.price || 0); }, 0) / FUELS.length; }
+    function totalEscrow() { ensureFuelPools(); return FUELS.reduce(function(sum, f) { return sum + Number((S.station.fuelPools[f.id] || {}).escrow || 0); }, 0); }
+    function fuelPool(fuelId) { ensureFuelPools(); return S.station.fuelPools[fuelId]; }
+    function maybeRollWindow(fuelId) {
+        var pool = fuelPool(fuelId), now = Date.now();
+        if (!pool.windowStart || now >= pool.windowStart + CFG.windowMs) {
+            pool.windowStart = now; pool.windowRevenue = 0; pool.windowFuelSold = 0; pool.windowDeliveries = 0;
+        }
+    }
+    function payoutRate(fuelId) {
+        var pool = fuelPool(fuelId); maybeRollWindow(fuelId);
+        if (pool.escrow <= 0 || pool.windowFuelSold <= 0) return 0;
+        return pool.escrow / Math.max(1, pool.windowFuelSold);
+    }
+    function calcPayout(fuelId, qty) {
+        var pool = fuelPool(fuelId), rate = payoutRate(fuelId), total = rate * qty, maxPayout = pool.escrow * 0.5;
+        return Math.min(total, maxPayout);
+    }
+
+    async function getClient() {
+        const mod = await import('@mysten/sui/client');
+        return new mod.SuiClient({ url: CFG.rpcUrl });
+    }
+
+    function discoverWallets(timeoutMs) {
+        timeoutMs = Number(timeoutMs || 4500);
+        return new Promise(function(resolve) {
+            var found = [];
+            var seen = {};
+            var api = {
+                register: function() {
+                    Array.prototype.forEach.call(arguments, function(w) {
+                        if (!w) return;
+                        var k = String((w.name || 'wallet') + '|' + (w.version || '0'));
+                        if (seen[k]) return;
+                        seen[k] = true;
+                        found.push(w);
+                    });
+                }
+            };
+            try { window.addEventListener('wallet-standard:register-wallet', function(e) { if (e.detail) e.detail(api); }); } catch (e) {}
+
+            var t0 = Date.now();
+            var tick = setInterval(function() {
+                try { window.dispatchEvent(new CustomEvent('wallet-standard:app-ready', { detail: api })); } catch (e) {}
+                if (found.length || (Date.now() - t0) >= timeoutMs) {
+                    clearInterval(tick);
+                    resolve(found);
+                }
+            }, 250);
+        });
+    }
+
+    function isInGameWalletName(name) {
+        var n = String(name || '').toLowerCase();
+        return n.indexOf('eve vault') >= 0 || n.indexOf('eve') >= 0 || n.indexOf('vault') >= 0 || n.indexOf('frontier') >= 0;
+    }
+
+    function pickWallet(wallets) {
+        var list = (wallets || []).filter(function(w) { return w && w.chains && w.chains.some(function(c) { return String(c).indexOf('sui:') === 0; }); });
+        if (!list.length) return null;
+        var preferred = list.find(function(w) { return isInGameWalletName(w.name); });
+        if (CFG.requireInGameWallet) return preferred || null;
+        return preferred || list[0];
+    }
+
+    function clearWalletSubscriptions() {
+        walletUnsubscribers.forEach(function(unsub) {
+            try { if (typeof unsub === 'function') unsub(); } catch (e) {}
+        });
+        walletUnsubscribers = [];
+    }
+
+    function firstWalletAccount(instance, preferredAddress) {
+        var accounts = (instance && instance.accounts) || [];
+        if (!accounts.length) return null;
+        var preferred = String(preferredAddress || S.wallet.address || '').toLowerCase();
+        if (preferred) {
+            var match = accounts.find(function(a) { return String(a.address || '').toLowerCase() === preferred; });
+            if (match) return match;
+        }
+        return accounts[0] || null;
+    }
+
+    function accountChainOk(account) {
+        var chains = (account && account.chains) || (walletInstance && walletInstance.chains) || [];
+        return !chains.length || chains.indexOf(CFG.walletChain) >= 0 || chains.some(function(c) { return String(c).indexOf('sui:') === 0; });
+    }
+
+    async function syncWalletFromInstance(instance, opts) {
+        opts = opts || {};
+        if (!instance) throw new Error('Wallet not connected');
+        walletInstance = instance;
+        var account = firstWalletAccount(instance, opts.preferredAddress);
+        if (!account && opts.requireAccount !== false) throw new Error('Wallet account unavailable');
+        if (!account) {
+            S.wallet.connected = false;
+            S.wallet.address = '';
+            S.wallet.account = null;
+            S.wallet.canTransact = false;
+            S.wallet.chainOk = false;
+            S.wallet.status = 'not-connected';
+            saveState();
+            renderWallet();
+            return null;
+        }
+        S.wallet.connected = true;
+        S.wallet.address = account.address;
+        S.wallet.name = instance.name || S.wallet.name || 'Wallet';
+        S.wallet.account = account;
+        S.wallet.canTransact = true;
+        S.wallet.chainOk = accountChainOk(account);
+        if (!S.wallet.chainOk) throw new Error('Wallet is connected to an unsupported Sui chain');
+        if (opts.keepStatus !== true && (!S.wallet.status || S.wallet.status === 'not-connected')) S.wallet.status = 'connected';
+        saveState();
+        renderWallet();
+        return account;
+    }
+
+    function subscribeWalletEvents(instance) {
+        clearWalletSubscriptions();
+        if (!instance || !instance.features) return;
+        var eventsFeature = instance.features['standard:events'];
+        if (!eventsFeature || typeof eventsFeature.on !== 'function') return;
+        var onHandler = function(event) {
+            if (!event) return;
+            var ev = event.event || event.type || event;
+            if (ev === 'change' || ev === 'accountsChanged' || ev === 'chainChanged') {
+                var nonce = ++walletSyncNonce;
+                Promise.resolve().then(function() { return syncWalletFromInstance(instance, { keepStatus: true, requireAccount: false }); }).then(function(account) {
+                    if (nonce !== walletSyncNonce) return;
+                    if (account) {
+                        refreshWalletBalance();
+                        checkPlayerContext();
+                    } else {
+                        disconnectWallet(true);
+                    }
+                }).catch(function(err) {
+                    console.warn('[fuel-station] wallet event sync failed', err);
+                });
+            }
+        };
+        try {
+            var unsub = eventsFeature.on('change', onHandler);
+            if (typeof unsub === 'function') walletUnsubscribers.push(unsub);
+        } catch (e) {}
+        try {
+            var unsub2 = eventsFeature.on('accountsChanged', onHandler);
+            if (typeof unsub2 === 'function') walletUnsubscribers.push(unsub2);
+        } catch (e2) {}
+        try {
+            var unsub3 = eventsFeature.on('chainChanged', onHandler);
+            if (typeof unsub3 === 'function') walletUnsubscribers.push(unsub3);
+        } catch (e3) {}
+    }
+
+    async function reconnectWalletInstance(preferredAddress) {
+        var wallets = await discoverWallets(3000);
+        var wallet = pickWallet(wallets);
+        if (!wallet) throw new Error('Wallet not connected');
+        walletInstance = wallet;
+        subscribeWalletEvents(wallet);
+        return syncWalletFromInstance(wallet, { preferredAddress: preferredAddress, keepStatus: true });
+    }
+
+    async function resolveActiveWalletAccount() {
+        if (!walletInstance) await reconnectWalletInstance(S.wallet.address);
+        var account = firstWalletAccount(walletInstance, S.wallet.address);
+        if (!account && S.wallet.account && S.wallet.account.address) account = S.wallet.account;
+        if (!account) account = await reconnectWalletInstance(S.wallet.address);
+        if (!account) throw new Error('Wallet account unavailable');
+        S.wallet.address = account.address;
+        S.wallet.account = account;
+        S.wallet.chainOk = accountChainOk(account);
+        if (!S.wallet.chainOk) throw new Error('Wallet is connected to an unsupported Sui chain');
+        saveState();
+        return account;
+    }
+
+    async function signAndExecute(tx) {
+        if (!walletInstance) throw new Error('Wallet not connected');
+        var account = await resolveActiveWalletAccount();
+        var features = walletInstance.features || {};
+        if (features['sui:signAndExecuteTransaction']) {
+            var feat = features['sui:signAndExecuteTransaction'];
+            var fn = feat.signAndExecuteTransaction || feat;
+            return await fn({ transaction: tx, account: account, chain: CFG.walletChain });
+        }
+        if (features['sui:signAndExecuteTransactionBlock']) {
+            var feat2 = features['sui:signAndExecuteTransactionBlock'];
+            var fn2 = feat2.signAndExecuteTransactionBlock || feat2;
+            return await fn2({ transactionBlock: tx, account: account, chain: CFG.walletChain });
+        }
+        throw new Error('Wallet does not support transaction signing');
+    }
+
+    async function waitForDigest(digest) {
+        if (!digest) return;
+        var client = await getClient();
+        if (client.waitForTransaction) return client.waitForTransaction({ digest: digest });
+        return client.getTransactionBlock({ digest: digest, options: { showEffects: true } });
+    }
+
+    function errorMessage(e) {
+        return (e && e.message) ? String(e.message) : String(e || '');
+    }
+
+    function isVersionConflictError(e) {
+        var msg = errorMessage(e);
+        return msg.indexOf('not available for consumption') >= 0 ||
+               msg.indexOf('current version') >= 0 ||
+               msg.indexOf('Object version unavailable') >= 0 ||
+               msg.indexOf('equivocated') >= 0;
+    }
+
+    function isRetriableWalletError(e) {
+        var msg = errorMessage(e).toLowerCase();
+        return msg.indexOf('wallet account unavailable') >= 0 ||
+               msg.indexOf('account not found') >= 0 ||
+               msg.indexOf('no active account') >= 0;
+    }
+
+    function isStationNotFoundError(e) {
+        var msg = errorMessage(e);
+        return msg.indexOf('EStationNotFound') >= 0 || msg.indexOf('Station not found') >= 0;
+    }
+
+    function mapTxError(e) {
+        var msg = errorMessage(e);
+        if (isVersionConflictError(e)) return 'A previous attempt likely landed (gas/object version moved). Refreshing state…';
+        if (msg.indexOf('Wallet account unavailable') >= 0) return 'Wallet lost its active account. Use Disconnect, then Connect again in the in-game browser.';
+        if (msg.indexOf('unsupported Sui chain') >= 0) return 'Wallet connected on the wrong chain. Switch the in-game wallet back to testnet.';
+        if (msg.indexOf('No SUI coin available for gas') >= 0) return 'No SUI coin with enough balance was available for gas. Consolidate or top up your wallet.';
+        if (msg.indexOf('EExtensionNotAuthorized') >= 0) return 'Fuel Station extension was not authorized yet. Retry once and it should self-authorize.';
+        if (msg.indexOf('ENotOnline') >= 0) return 'This SSU is offline. Fuel it and bring it online in-game.';
+        if (msg.indexOf('EStationNotFound') >= 0 || msg.indexOf('Station not found') >= 0) return CFG.allowAutoInitOnMissingStation ? 'Station is not initialized on this SSU yet. Initializing…' : 'Station is not initialized at the frozen package/config IDs.';
+        if (msg.indexOf('EStationPaused') >= 0) return 'Station is currently paused by the operator.';
+        if (msg.indexOf('EInsufficientPayment') >= 0) return 'Not enough SUI to cover the purchase.';
+        if (msg.indexOf('InsufficientCoinBalance') >= 0 || msg.toLowerCase().indexOf('insufficient') >= 0) return 'Not enough SUI for the transaction or gas fees.';
+        if (msg.indexOf('borrow_child_object') >= 0) return 'Owner cap or inventory path was not found. The SSU inventory structure may have changed.';
+        if (msg.indexOf('ESenderCannotAccessCharacter') >= 0) return 'This wallet cannot access the current Character. Make sure you opened the page in the correct in-game EVE Vault.';
+        return msg || 'Transaction failed';
+    }
+
+    function debugTxSummary(label, extra) {
+        if (!CFG.debugTx) return;
+        console.log('[fuel-station][debug]', Object.assign({
+            label: label,
+            packageId: CFG.packageId,
+            configObjectId: CFG.configObjectId,
+            adminCapId: CFG.adminCapId,
+            ssuId: CFG.ssuId,
+            openInventoryId: CFG.ssuOpenInventoryId,
+            worldPackageId: CFG.worldPackageId,
+            wallet: S.wallet.address || ''
+        }, extra || {}));
+    }
+
+    async function executeTxFlow(opts) {
+        if (txBusy) throw new Error('Transaction already in progress');
+        txBusy = true;
+        var attempts = Math.max(1, Number((opts && opts.maxAttempts) || 1));
+        var lastErr = null;
+        try {
+            for (var i = 0; i < attempts; i++) {
+                try {
+                    if (i > 0 && opts && typeof opts.beforeRetry === 'function') await opts.beforeRetry(i, lastErr);
+                    var built = await opts.build(i, lastErr);
+                    debugTxSummary(opts.label || 'tx', built.debug || {});
+                    var result = await signAndExecute(built.tx);
+                    await waitForDigest(result.digest);
+                    var client = await getClient();
+                    var txb = await client.getTransactionBlock({ digest: result.digest, options: { showEffects: true } });
+                    var st = txb && txb.effects && txb.effects.status && txb.effects.status.status;
+                    if (!st) {
+                        throw new Error('On-chain execution verification failed (missing effects status). Digest: ' + result.digest);
+                    }
+                    if (st !== 'success') {
+                        throw new Error('On-chain execution failed: ' + JSON.stringify(txb.effects.status) + ' (digest ' + result.digest + ')');
+                    }
+                    return result.digest;
+                } catch (e) {
+                    lastErr = e;
+                    if (i < attempts - 1 && (isVersionConflictError(e) || isRetriableWalletError(e))) {
+                        if (isRetriableWalletError(e)) await reconnectWalletInstance(S.wallet.address);
+                        await new Promise(function(r) { setTimeout(r, 1200 + (i * 600)); });
+                        continue;
+                    }
+                    throw e;
+                }
+            }
+            throw lastErr || new Error('Transaction failed');
+        } finally {
+            txBusy = false;
+        }
+    }
+
+    async function relayExecute(action, fuelId, qty) {
+        if (!CFG.relayUrl || !CFG.relayToken) return null;
+        var resp = await fetch(CFG.relayUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: CFG.relayToken, action: action, fuelId: String(fuelId), qty: Number(qty), wallet: S.wallet.address || '' })
+        });
+        var data = {};
+        try { data = await resp.json(); } catch (e) {}
+        if (!resp.ok || !data.ok) {
+            var err = (data && (data.error || data.note)) || ('relay_http_' + resp.status);
+            throw new Error(err);
+        }
+        return data;
+    }
+
+    async function refreshWalletBalance() {
+        if (!S.wallet.address) return;
+        try {
+            var client = await getClient();
+            var bal = await client.getBalance({ owner: S.wallet.address });
+            S.wallet.balance = Number(bal.totalBalance || 0) / 1e9;
+            saveState();
+            renderWallet();
+        } catch (e) {
+            console.warn('[fuel-station] balance fetch failed', e);
+        }
+    }
+
+    async function applyFreshGasPayment(tx, minMistNeeded) {
+        var client = await getClient();
+        var coins = await client.getCoins({ owner: S.wallet.address, coinType: '0x2::sui::SUI' });
+        var list = (coins && coins.data ? coins.data : []).slice().sort(function(a, b) {
+            return Number(b.balance || 0) - Number(a.balance || 0);
+        });
+        var need = Number(minMistNeeded || 0);
+        var gasBudget = 30000000;
+        var gasReserve = 15000000;
+        var minRequired = need + gasBudget + gasReserve;
+        var pick = list.find(function(c) { return Number(c.balance || 0) >= minRequired; }) || list.find(function(c) { return Number(c.balance || 0) > gasBudget; }) || null;
+        if (!pick) throw new Error('No SUI coin available for gas');
+        if (tx.setGasPayment) {
+            tx.setGasPayment([{ objectId: pick.coinObjectId, version: String(pick.version), digest: pick.digest }]);
+        }
+        if (tx.setGasBudgetIfNotSet) tx.setGasBudgetIfNotSet(gasBudget);
+        debugTxSummary('gas-selection', { gasCoinId: pick.coinObjectId, gasCoinVersion: String(pick.version), gasCoinBalanceMist: String(pick.balance || 0), minMistNeeded: String(need) });
+        return pick;
+    }
+
+    function setConnected(address, name, instance, accountObj) {
+        walletInstance = instance || walletInstance;
+        subscribeWalletEvents(walletInstance);
+        S.wallet.connected = true;
+        S.wallet.address = address;
+        S.wallet.name = name || (instance && instance.name) || 'Wallet';
+        S.wallet.account = accountObj || (instance && instance.accounts && instance.accounts.find(function(a) { return String(a.address || '').toLowerCase() === String(address || '').toLowerCase(); })) || null;
+        S.wallet.canTransact = !!walletInstance;
+        S.wallet.status = 'connected';
+        S.wallet.chainOk = S.wallet.account ? accountChainOk(S.wallet.account) : true;
+        saveState();
+        renderWallet();
+        refreshWalletBalance();
+        checkPlayerContext();
+    }
+
+
+    async function connect() {
+        if (S.wallet.connected) {
+            disconnectWallet();
+            return;
+        }
+        var btn = el('btnConn');
+        btn.disabled = true;
+        btn.textContent = 'Connecting...';
+        try {
+            var wallets = await discoverWallets(6000);
+            var wallet = pickWallet(wallets);
+            if (!wallet) throw new Error('No Sui wallet detected. Open this page inside the EVE Frontiers in-game browser (EVE Vault).');
+            walletInstance = wallet;
+            if (wallet.features && wallet.features['standard:connect']) {
+                var result = await wallet.features['standard:connect'].connect();
+                var accounts = (result && result.accounts) || wallet.accounts || [];
+                if (accounts.length) {
+                    setConnected(accounts[0].address, wallet.name, wallet, accounts[0]);
+                    return;
+                }
+            }
+            if (wallet.accounts && wallet.accounts.length) {
+                setConnected(wallet.accounts[0].address, wallet.name, wallet, wallet.accounts[0]);
+                return;
+            }
+            throw new Error('Wallet connection failed');
+        } catch (e) {
+            console.error(e);
+            toast((e && e.message) || 'Wallet connection failed', 'e');
+        } finally {
+            renderWallet();
+        }
+    }
+
+    function disconnectWallet(silent) {
+        try {
+            var disconnectFeature = walletInstance && walletInstance.features && walletInstance.features['standard:disconnect'];
+            if (disconnectFeature && typeof disconnectFeature.disconnect === 'function') disconnectFeature.disconnect();
+        } catch (e) {}
+        clearWalletSubscriptions();
+        S.wallet.connected = false;
+        S.wallet.address = '';
+        S.wallet.name = '';
+        S.wallet.balance = 0;
+        S.wallet.canTransact = false;
+        S.wallet.chainOk = false;
+        S.wallet.hasCharacter = false;
+        S.wallet.hasOwnerCap = false;
+        S.wallet.characterId = '';
+        S.wallet.ownerCapId = '';
+        S.wallet.account = null;
+        S.wallet.status = 'not-connected';
+        S.wallet.ctxError = '';
+        walletInstance = null;
+        saveState();
+        renderWallet();
+        renderBuyGrid();
+        renderDeliverGrid();
+        if (!silent) toast('Wallet disconnected', 'i');
+    }
+
+    function resetAll() {
+        S = defaultState();
+        walletInstance = null;
+        selBuy = null; selDel = null; selDepFuel = null; pendingBuy = null; pendingDelivery = null;
+        saveState(); renderWallet(); renderStats(); renderBuyGrid(); renderDeliverGrid(); renderSSUInventory();
+        toast('State reset to defaults', 'i');
+    }
+
+    function hasEveVaultContext() {
+        return walletInstance && String(walletInstance.name || '').toLowerCase().indexOf('eve vault') >= 0;
+    }
+
+    async function checkPlayerContext() {
+        if (!S.wallet.connected || !S.wallet.address) {
+            S.wallet.hasCharacter = false;
+            S.wallet.hasOwnerCap = false;
+            S.wallet.characterId = '';
+            S.wallet.ownerCapId = '';
+            S.wallet.status = 'not-connected';
+            S.wallet.ctxError = '';
+            saveState();
+            renderWallet();
+            return;
+        }
+        S.wallet.status = 'checking';
+        S.wallet.ctxError = '';
+        saveState();
+        renderWallet();
+        try {
+            var ctx = await getPlayerContext();
+            S.wallet.hasCharacter = !!(ctx && ctx.characterId);
+            S.wallet.hasOwnerCap = !!(ctx && ctx.ownerCapId);
+            S.wallet.characterId = (ctx && ctx.characterId) || '';
+            S.wallet.ownerCapId = (ctx && ctx.ownerCapId) || '';
+            S.wallet.status = (S.wallet.hasCharacter && S.wallet.hasOwnerCap) ? 'eve-vault-ready' : 'eve-vault-missing-context';
+            S.wallet.ctxError = '';
+            if (S.wallet.hasCharacter && S.wallet.hasOwnerCap) {
+                try { await ensureExtensionAuthorized(ctx); } catch (extErr) { console.warn('[fuel-station] extension setup skipped/failed', extErr); }
+            }
+        } catch (e) {
+            S.wallet.hasCharacter = false;
+            S.wallet.hasOwnerCap = false;
+            S.wallet.characterId = '';
+            S.wallet.ownerCapId = '';
+            S.wallet.status = 'eve-vault-missing-context';
+            S.wallet.ctxError = (e && e.message) ? e.message : String(e);
+        }
+        saveState();
+        renderWallet();
+        renderBuyGrid();
+        renderDeliverGrid();
+    }
+
+    async function getPlayerContext() {
+        var client = await getClient();
+
+        var profileType = CFG.worldPackageId + '::character::PlayerProfile';
+        var profiles = null;
+        try {
+            profiles = await client.getOwnedObjects({
+                owner: S.wallet.address,
+                filter: { StructType: profileType },
+                options: { showContent: true, showType: true }
+            });
+        } catch (eFilter) {
+            console.warn('[fuel-station] filtered PlayerProfile lookup failed, falling back to full owned scan', eFilter);
+        }
+
+        var profileObj = null;
+        if (profiles && profiles.data && profiles.data.length) {
+            profileObj = profiles.data[0] && profiles.data[0].data;
+        } else {
+            // Fallback path: scan all owned objects and match PlayerProfile type manually
+            var cursor = null;
+            for (var page = 0; page < 6 && !profileObj; page++) {
+                var batch = await client.getOwnedObjects({
+                    owner: S.wallet.address,
+                    cursor: cursor,
+                    limit: 50,
+                    options: { showContent: true, showType: true }
+                });
+                var rows = batch && batch.data ? batch.data : [];
+                for (var i = 0; i < rows.length; i++) {
+                    var d = rows[i] && rows[i].data;
+                    if (d && String(d.type || '') === profileType) { profileObj = d; break; }
+                }
+                if (!batch || !batch.hasNextPage) break;
+                cursor = batch.nextCursor;
+            }
+        }
+
+        if (!profileObj) throw new Error('No PlayerProfile found for wallet ' + shortId(S.wallet.address));
+
+        var characterId = profileObj && profileObj.content && profileObj.content.fields && profileObj.content.fields.character_id;
+        if (!characterId) throw new Error('PlayerProfile found but character_id missing');
+
+        var ssuObj = await client.getObject({ id: CFG.ssuId, options: { showContent: true, showType: true } });
+        var ssuFields = ((((ssuObj || {}).data || {}).content || {}).fields || {});
+        var invKeys = (ssuFields.inventory_keys || []).map(function(k){ return String(k); });
+
+        // CRITICAL: prefer the connected player's owner cap when present.
+        // Using SSU default owner_cap_id can route purchases into the wrong inventory bucket.
+        var preferredOwnerCap = String((S.wallet && S.wallet.ownerCapId) || '');
+        var ownerCapId = null;
+        if (preferredOwnerCap && invKeys.indexOf(preferredOwnerCap) >= 0) {
+            ownerCapId = preferredOwnerCap;
+        } else {
+            ownerCapId = (invKeys && invKeys.length ? invKeys[0] : null) || ssuFields.owner_cap_id || null;
+        }
+        var ownerCapRef = null;
+        if (ownerCapId) {
+            var capObj = await client.getObject({ id: ownerCapId, options: { showType: true } });
+            if (capObj && capObj.data && capObj.data.version && capObj.data.digest) {
+                ownerCapRef = { objectId: ownerCapId, version: capObj.data.version, digest: capObj.data.digest };
+            }
+        }
+
+        return {
+            client: client,
+            characterId: characterId,
+            ownerCapId: ownerCapId || '',
+            ownerCapRef: ownerCapRef
+        };
+    }
+
+    async function buildDonateFuelTx(fuelId, qty) {
+        const txm = await import('@mysten/sui/transactions');
+        var Transaction = txm.Transaction;
+        var ctx = await getPlayerContext();
+
+        var capObj = await ctx.client.getObject({ id: ctx.ownerCapId, options: {} });
+        var tx = new Transaction();
+
+        var borrowed = tx.moveCall({
+            target: CFG.worldPackageId + '::character::borrow_owner_cap',
+            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
+            arguments: [
+                tx.object(ctx.characterId),
+                tx.receivingRef({ objectId: ctx.ownerCapId, version: capObj.data.version, digest: capObj.data.digest })
+            ]
+        });
+        var ownerCap = borrowed[0];
+        var receipt = borrowed[1];
+
+        tx.moveCall({
+            target: CFG.worldPackageId + '::storage_unit::authorize_extension',
+            typeArguments: [CFG.packageId + '::config::FuelStationAuth'],
+            arguments: [tx.object(CFG.ssuId), ownerCap]
+        });
+
+        var item = tx.moveCall({
+            target: CFG.worldPackageId + '::storage_unit::withdraw_by_owner',
+            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
+            arguments: [
+                tx.object(CFG.ssuId),
+                tx.object(ctx.characterId),
+                ownerCap,
+                tx.pure.u64(parseInt(fuelId, 10)),
+                tx.pure.u32(Number(qty))
+            ]
+        });
+
+        var authWitness = tx.moveCall({
+            target: CFG.packageId + '::config::fuel_station_auth',
+            arguments: []
+        });
+
+        tx.moveCall({
+            target: CFG.worldPackageId + '::storage_unit::deposit_to_open_inventory',
+            typeArguments: [CFG.packageId + '::config::FuelStationAuth'],
+            arguments: [
+                tx.object(CFG.ssuId),
+                tx.object(ctx.characterId),
+                item,
+                authWitness
+            ]
+        });
+
+        tx.moveCall({
+            target: CFG.worldPackageId + '::character::return_owner_cap',
+            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
+            arguments: [tx.object(ctx.characterId), ownerCap, receipt]
+        });
+
+        await applyFreshGasPayment(tx, 0);
+        return { tx: tx, debug: { action: 'donate', fuelId: String(fuelId), qty: Number(qty), characterId: ctx.characterId, ownerCapId: ctx.ownerCapId, sourceInventory: CFG.ssuId, destinationOpenInventoryId: CFG.ssuOpenInventoryId } };
+    }
+
+    async function ensureExtensionAuthorized(ctx) {
+        var client = ctx.client;
+        var ssuObj = await client.getObject({ id: CFG.ssuId, options: { showContent: true } });
+        var ssuFields = ((((ssuObj || {}).data || {}).content || {}).fields || {});
+        var extensionType = ssuFields.extension;
+        var expectedAuth = CFG.packageId + '::config::FuelStationAuth';
+        if (extensionType && JSON.stringify(extensionType).indexOf(expectedAuth) >= 0) {
+            return;
+        }
+        toast('Setting up Fuel Station extension on this SSU…', 'i');
+        var txm = await import('@mysten/sui/transactions');
+        var capObj = await client.getObject({ id: ctx.ownerCapId, options: {} });
+        var authTx = new txm.Transaction();
+        var authBorrowed = authTx.moveCall({
+            target: CFG.worldPackageId + '::character::borrow_owner_cap',
+            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
+            arguments: [
+                authTx.object(ctx.characterId),
+                authTx.receivingRef({ objectId: ctx.ownerCapId, version: capObj.data.version, digest: capObj.data.digest })
+            ]
+        });
+        var authCap = authBorrowed[0];
+        var authReceipt = authBorrowed[1];
+        authTx.moveCall({
+            target: CFG.worldPackageId + '::storage_unit::authorize_extension',
+            typeArguments: [expectedAuth],
+            arguments: [authTx.object(CFG.ssuId), authCap]
+        });
+        authTx.moveCall({
+            target: CFG.worldPackageId + '::character::return_owner_cap',
+            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
+            arguments: [authTx.object(ctx.characterId), authCap, authReceipt]
+        });
+        await applyFreshGasPayment(authTx, 0);
+        await signAndExecute(authTx);
+        toast('Extension authorized! Continuing…', 's');
+    }
+
+    async function initializeStationForCurrentSSU() {
+        const txm = await import('@mysten/sui/transactions');
+        var Transaction = txm.Transaction;
+        var tx = new Transaction();
+
+        tx.moveCall({
+            target: CFG.packageId + '::fuel_station::create_station',
+            arguments: [
+                tx.object(CFG.configObjectId),
+                tx.object(CFG.adminCapId),
+                tx.pure.id(CFG.ssuId),
+                tx.pure.u8(Number(CFG.operatorCut || 15)),
+                tx.object(CFG.clockId)
+            ]
+        });
+
+        FUELS.forEach(function(f) {
+            var priceMist = Math.max(1, Math.ceil(Number(f.price || 0) * 1e9));
+            tx.moveCall({
+                target: CFG.packageId + '::fuel_station::configure_fuel',
+                arguments: [
+                    tx.object(CFG.configObjectId),
+                    tx.object(CFG.adminCapId),
+                    tx.pure.id(CFG.ssuId),
+                    tx.pure.u64(parseInt(f.id, 10)),
+                    tx.pure.u64(priceMist),
+                    tx.object(CFG.clockId)
+                ]
+            });
+        });
+
+        await applyFreshGasPayment(tx, 0);
+        return { tx: tx, debug: { action: 'initialize-station', ssuId: CFG.ssuId } };
+    }
+
+    async function buildBuyFuelTx(fuelId, qty) {
+        const txm = await import('@mysten/sui/transactions');
+        var Transaction = txm.Transaction;
+        var ctx = await getPlayerContext();
+        var f = fuelById(fuelId);
+        var amountMist = Math.ceil(Number(f.price || 0) * Number(qty || 0) * 1e9);
+        var capObj = await ctx.client.getObject({ id: ctx.ownerCapId, options: {} });
+        var tx = new Transaction();
+
+        // Use tx.gas for payment split so in-game wallet can co-manage gas/payment consistently
+        var payment = tx.splitCoins(tx.gas, [tx.pure.u64(amountMist)]);
+        var borrowed = tx.moveCall({
+            target: CFG.worldPackageId + '::character::borrow_owner_cap',
+            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
+            arguments: [tx.object(ctx.characterId), tx.receivingRef({ objectId: ctx.ownerCapId, version: capObj.data.version, digest: capObj.data.digest })]
+        });
+        var ownerCap = borrowed[0];
+        var receipt = borrowed[1];
+        tx.moveCall({
+            target: CFG.worldPackageId + '::storage_unit::authorize_extension',
+            typeArguments: [CFG.packageId + '::config::FuelStationAuth'],
+            arguments: [tx.object(CFG.ssuId), ownerCap]
+        });
+        tx.moveCall({
+            target: CFG.packageId + '::fuel_station::buy_fuel',
+            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
+            arguments: [
+                tx.object(CFG.configObjectId),
+                tx.object(CFG.adminCapId),
+                tx.object(CFG.ssuId),
+                tx.object(ctx.characterId),
+                ownerCap,
+                tx.pure.id(CFG.ssuId),
+                tx.pure.u64(parseInt(fuelId, 10)),
+                tx.pure.u64(Number(qty)),
+                payment,
+                tx.object(CFG.clockId)
+            ]
+        });
+        tx.moveCall({
+            target: CFG.worldPackageId + '::character::return_owner_cap',
+            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
+            arguments: [tx.object(ctx.characterId), ownerCap, receipt]
+        });
+        await applyFreshGasPayment(tx, amountMist);
+        return { tx: tx, debug: { action: 'buy', fuelId: String(fuelId), qty: Number(qty), paymentMist: String(amountMist), characterId: ctx.characterId, ownerCapId: ctx.ownerCapId, stationInventoryId: CFG.ssuId } };
+    }
+
+    async function buildDeliverFuelTx(fuelId, qty) {
+        const txm = await import('@mysten/sui/transactions');
+        var Transaction = txm.Transaction;
+        var ctx = await getPlayerContext();
+        var capObj = await ctx.client.getObject({ id: ctx.ownerCapId, options: {} });
+        var tx = new Transaction();
+        var borrowed = tx.moveCall({
+            target: CFG.worldPackageId + '::character::borrow_owner_cap',
+            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
+            arguments: [tx.object(ctx.characterId), tx.receivingRef({ objectId: ctx.ownerCapId, version: capObj.data.version, digest: capObj.data.digest })]
+        });
+        var ownerCap = borrowed[0];
+        var receipt = borrowed[1];
+        tx.moveCall({
+            target: CFG.worldPackageId + '::storage_unit::authorize_extension',
+            typeArguments: [CFG.packageId + '::config::FuelStationAuth'],
+            arguments: [tx.object(CFG.ssuId), ownerCap]
+        });
+        tx.moveCall({
+            target: CFG.packageId + '::fuel_station::deliver_fuel',
+            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
+            arguments: [
+                tx.object(CFG.configObjectId),
+                tx.object(CFG.adminCapId),
+                tx.object(CFG.ssuId),
+                tx.object(ctx.characterId),
+                ownerCap,
+                tx.pure.id(CFG.ssuId),
+                tx.pure.u64(parseInt(fuelId, 10)),
+                tx.pure.u64(Number(qty)),
+                tx.object(CFG.clockId)
+            ]
+        });
+        tx.moveCall({
+            target: CFG.worldPackageId + '::character::return_owner_cap',
+            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
+            arguments: [tx.object(ctx.characterId), ownerCap, receipt]
+        });
+        await applyFreshGasPayment(tx, 0);
+        return { tx: tx, debug: { action: 'deliver', fuelId: String(fuelId), qty: Number(qty), characterId: ctx.characterId, ownerCapId: ctx.ownerCapId, stationInventoryId: CFG.ssuId } };
+    }
+
+    function recordTx(entry) { S.transactions.unshift(Object.assign({ id: txId(), timestamp: new Date().toISOString() }, entry)); S.transactions = S.transactions.slice(0, 20); saveState(); }
+
+
+    function buyFuel(fuelId) {
+        var f = fuelById(fuelId), inp = el('bq-' + fuelId), qty = parseInt(inp && inp.value, 10) || 0;
+        if (!f || qty <= 0) return;
+        if (!S.wallet.connected) { toast('Connect wallet first', 'e'); return; }
+        var sk = S.station.stock[fuelId] || 0;
+        if (qty > sk) { toast('Not enough stock (max ' + sk + ')', 'e'); return; }
+        var total = f.price * qty;
+        pendingBuy = { fuelId: fuelId, qty: qty, total: total };
+        openBuyModal();
+    }
+
+    function deliverFuel(fuelId) {
+        var f = fuelById(fuelId), inp = el('dq-' + fuelId), qty = parseInt(inp && inp.value, 10) || 0;
+        if (!f || qty <= 0) return;
+        if (!S.wallet.connected) { toast('Connect wallet first', 'e'); return; }
+        pendingDelivery = { fuelId: fuelId, qty: qty, payout: calcPayout(fuelId, qty) };
+        openDeliverModal();
+    }
+
+    async function confirmBuyFlow() {
+        if (!pendingBuy) return;
+        if (txBusy) { toast('Transaction already in progress…', 'i'); return; }
+        var f = fuelById(pendingBuy.fuelId);
+        if (!S.wallet.hasCharacter || !S.wallet.hasOwnerCap) {
+            toast('Buy requires gameplay context (Character + OwnerCap). Open in-game EVE Vault and reconnect.', 'i');
+            closeDeliverModal();
+            return;
+        }
+        setModalProcessing('Processing Buy', 'Signing and submitting on-chain transaction…', ['Sign transaction in EVE Vault', 'Submitting buy_fuel', 'Waiting for chain confirmation']);
+        try {
+            var digest = await executeTxFlow({
+                label: 'buy_fuel',
+                maxAttempts: 3,
+                beforeRetry: async function() { await refreshWalletBalance(); },
+                build: function() { return buildBuyFuelTx(pendingBuy.fuelId, pendingBuy.qty); }
+            });
+            recordTx({ type: 'buy', fuelId: pendingBuy.fuelId, fuelName: f.name, quantity: pendingBuy.qty, total: pendingBuy.total, digest: digest, runnerPayout: 0 });
+            pendingBuy = null;
+            closeDeliverModal();
+            toast('Buy confirmed: ' + shortId(digest), 's');
+            await refreshAll();
+        } catch (e) {
+            console.error(e);
+            if (isStationNotFoundError(e)) {
+                if (CFG.allowAutoInitOnMissingStation) {
+                    try {
+                        toast('Station missing on this SSU. Initializing now…', 'i');
+                        await executeTxFlow({ label: 'init_station', maxAttempts: 2, build: function() { return initializeStationForCurrentSSU(); } });
+                        await refreshAll();
+                        var digestRetry = await executeTxFlow({
+                            label: 'buy_fuel_retry',
+                            maxAttempts: 3,
+                            beforeRetry: async function() { await refreshWalletBalance(); },
+                            build: function() { return buildBuyFuelTx(pendingBuy.fuelId, pendingBuy.qty); }
+                        });
+                        recordTx({ type: 'buy', fuelId: pendingBuy.fuelId, fuelName: f.name, quantity: pendingBuy.qty, total: pendingBuy.total, digest: digestRetry, runnerPayout: 0 });
+                        pendingBuy = null;
+                        closeDeliverModal();
+                        toast('Buy confirmed: ' + shortId(digestRetry), 's');
+                        await refreshAll();
+                        return;
+                    } catch (initErr) {
+                        console.error(initErr);
+                        toast('Station init failed: ' + mapTxError(initErr), 'e');
+                        closeDeliverModal();
+                        return;
+                    }
+                }
+                toast('Station not found at frozen package/config IDs. Auto-init is disabled to avoid drifting package state.', 'e');
+                closeDeliverModal();
+                return;
+            }
+            if (isVersionConflictError(e)) await refreshAll();
+            toast(mapTxError(e), isVersionConflictError(e) ? 'i' : 'e');
+            closeDeliverModal();
+        }
+    }
+
+    async function confirmDeliverFlow() {
+        if (!pendingDelivery) return;
+        if (txBusy) { toast('Transaction already in progress…', 'i'); return; }
+        var f = fuelById(pendingDelivery.fuelId);
+        if (!S.wallet.hasCharacter || !S.wallet.hasOwnerCap) {
+            toast('Deliver requires gameplay context (Character + OwnerCap). Open in-game EVE Vault and reconnect.', 'i');
+            closeDeliverModal();
+            return;
+        }
+        setModalProcessing('Processing Delivery', 'Signing and submitting on-chain transaction…', ['Sign transaction in EVE Vault', 'Submitting deliver_fuel', 'Waiting for chain confirmation']);
+        try {
+            var digest2 = null;
+            try {
+                var relay2 = await relayExecute('deliver', pendingDelivery.fuelId, pendingDelivery.qty);
+                digest2 = relay2 && relay2.digest;
+            } catch (relayErr2) {
+                console.warn('[fuel-station] deliver relay unavailable, falling back to direct wallet tx', relayErr2);
+            }
+            if (!digest2) {
+                digest2 = await executeTxFlow({
+                    label: 'deliver_fuel',
+                    maxAttempts: 3,
+                    beforeRetry: async function() { await refreshAll(); },
+                    build: function() { return buildDeliverFuelTx(pendingDelivery.fuelId, pendingDelivery.qty); }
+                });
+            }
+            recordTx({ type: 'deliver', fuelId: pendingDelivery.fuelId, fuelName: f.name, quantity: pendingDelivery.qty, total: 0, digest: digest2, runnerPayout: pendingDelivery.payout || 0 });
+            pendingDelivery = null;
+            closeDeliverModal();
+            toast('Delivery confirmed: ' + shortId(digest2), 's');
+            await refreshAll();
+        } catch (e) {
+            console.error(e);
+            if (isVersionConflictError(e)) await refreshAll();
+            toast(mapTxError(e), isVersionConflictError(e) ? 'i' : 'e');
+            closeDeliverModal();
+        }
+    }
+
+    function buyUpdate(fuelId) {
+        var f = fuelById(fuelId), inp = el('bq-' + fuelId), sub = el('bsub-' + fuelId), tot = el('btot-' + fuelId), btn = el('bbtn-' + fuelId);
+        if (!f) return;
+        var qty = parseInt(inp && inp.value, 10) || 0, sk = S.station.stock[fuelId] || 0, total = qty * f.price;
+        if (qty > 0 && qty <= sk) {
+            if (sub) sub.textContent = sui(total) + ' SUI';
+            if (tot) tot.innerHTML = 'Total: <strong style="color:var(--orange)">' + sui(total) + ' SUI</strong>';
+            if (btn) btn.disabled = !S.wallet.connected;
+        } else {
+            if (sub) sub.textContent = '—';
+            if (tot) tot.textContent = qty > sk ? 'Exceeds stock (max ' + sk + ')' : '';
+            if (btn) btn.disabled = true;
+        }
+    }
+
+    function deliverUpdate(fuelId) {
+        var inp = el('dq-' + fuelId), sub = el('dsub-' + fuelId), tot = el('dtot-' + fuelId), btn = el('dbtn-' + fuelId);
+        var qty = parseInt(inp && inp.value, 10) || 0;
+        if (qty > 0) {
+            var payout = calcPayout(fuelId, qty);
+            if (sub) sub.textContent = payout > 0 ? sui(payout) + ' SUI' : 'Requires EVE Vault';
+            if (tot) tot.innerHTML = payout > 0 ? 'Est. payout: <strong style="color:var(--green)">' + sui(payout) + ' SUI</strong> for ' + qty + ' units' : 'Requires in-game EVE Vault Character + OwnerCap';
+            if (btn) btn.disabled = !S.wallet.connected;
+        } else {
+            if (sub) sub.textContent = '—';
+            if (tot) tot.textContent = '';
+            if (btn) btn.disabled = true;
+        }
+    }
+
+    function selectCard(fuelId) {
+        if (currentTab === 'buy') {
+            if ((S.station.stock[fuelId] || 0) <= 0) return;
+            selBuy = selBuy === fuelId ? null : fuelId;
+            renderBuyGrid();
+            if (selBuy) setTimeout(function() { var inp = el('bq-' + fuelId); if (inp) inp.focus(); }, 60);
+        } else if (currentTab === 'deliver') {
+            selDel = selDel === fuelId ? null : fuelId;
+            renderDeliverGrid();
+            if (selDel) setTimeout(function() { var inp2 = el('dq-' + fuelId); if (inp2) inp2.focus(); }, 60);
+        }
+    }
+
+
+    function renderDiagnostics() {
+        var d = el('ctxDiag');
+        if (!d) return;
+        var lines = [];
+        lines.push('<strong>Context diagnostics:</strong>');
+        lines.push('Wallet: ' + (S.wallet.connected ? shortId(S.wallet.address) : 'not connected'));
+        lines.push('Status: ' + (S.wallet.status || 'unknown'));
+        lines.push('Character: ' + (S.wallet.hasCharacter ? ('found (' + shortId(String(S.wallet.characterId || '')) + ')') : 'missing'));
+        lines.push('OwnerCap: ' + (S.wallet.hasOwnerCap ? ('found (' + shortId(String(S.wallet.ownerCapId || '')) + ')') : 'missing'));
+        if (S.wallet.ctxError) lines.push('Error: ' + S.wallet.ctxError);
+        d.innerHTML = lines.join('<br>');
+    }
+
+    function renderWallet() {
+        var info = el('walletInfo'), btn = el('btnConn'), rst = el('btnReset'), badge = el('modeBadge'), note = el('liveNote');
+        badge.className = 'mode-badge ' + CFG.mode;
+        badge.textContent = CFG.mode === 'demo' ? 'Demo' : (CFG.mode === 'live' ? 'Live' : 'Live Readonly');
+        if (S.wallet.connected) {
+            var statusText = 'Connected';
+            if (S.wallet.status === 'checking') statusText = 'Checking player context…';
+            else if (S.wallet.status === 'eve-vault-ready') statusText = 'EVE Vault ready';
+            else if (S.wallet.status === 'eve-vault-missing-context') statusText = 'EVE Vault found, but no character/owner cap yet';
+            else if (S.wallet.status === 'browser-wallet') statusText = 'Browser wallet connected';
+            info.innerHTML = '<div class="lbl">Wallet</div><div class="addr">' + shortId(S.wallet.address) + '</div><div class="bal">' + sui(S.wallet.balance) + ' SUI</div><div class="lbl" style="margin-top:0.2rem">' + (S.wallet.name || 'Wallet') + ' · ' + statusText + '</div>';
+            btn.textContent = 'Disconnect';
+            btn.disabled = false;
+            btn.classList.remove('btn-p');
+            btn.classList.add('btn-ghost');
+            rst.style.display = isDemoMode() ? '' : 'none';
+        } else {
+            info.innerHTML = '<div class="lbl">Wallet</div><div class="nc">Not connected</div>';
+            btn.textContent = 'Connect';
+            btn.disabled = false;
+            btn.classList.add('btn-p');
+            btn.classList.remove('btn-ghost');
+            rst.style.display = 'none';
+        }
+        var modeLabel = CFG.mode === 'live' ? 'Live mode' : (CFG.mode === 'demo' ? 'Demo mode' : 'Live readonly mode');
+        note.innerHTML = '<strong>' + modeLabel + ':</strong> chain reads are enabled on <strong>' + CFG.network + '</strong>. SSU: <strong>' + shortId(CFG.ssuId) + '</strong>. ' +
+            (S.live.lastSync ? 'Inventory sync: <strong>' + new Date(S.live.lastSync).toLocaleTimeString() + '</strong>. ' : '') +
+            (S.live.inventorySource === 'rpc' ? 'Station stock is reading from the SSU via RPC. ' : 'Using fallback stock values. ') +
+            (S.live.contractSync ? 'Contract sync: <strong>' + new Date(S.live.contractSync).toLocaleTimeString() + '</strong>. ' : '') +
+            (S.live.syncError ? 'Inventory issue: <strong>' + S.live.syncError + '</strong>. ' : '') +
+            (S.live.contractError ? 'Contract issue: <strong>' + S.live.contractError + '</strong>. ' : '') +
+            '<strong>Buy</strong>, <strong>Deliver</strong>, and <strong>Donate Fuel</strong> are intended to run in the in-game browser via EVE Vault context (Character + OwnerCap).';
+        renderDiagnostics();
+    }
+
+    function renderStats() {
+        el('sStock').textContent = totalStock();
+        el('sAvgPrice').textContent = sui(avgPrice());
+        S.station.escrow = totalEscrow();
+        el('sEscrow').textContent = sui(S.station.escrow);
+            }
+
+    function renderBuyGrid() {
+        var g = el('buyGrid'), h = '';
+        FUELS.forEach(function(f) {
+            var sk = S.station.stock[f.id] || 0, empty = sk <= 0, pct = stockPct(f.id), fc = stockClass(pct), bd = badgeInfo(sk), sel = selBuy === f.id;
+            var expanded = '';
+            if (!empty) expanded = '<div class="fc-expanded">' +
+                '<div class="fc-exp-info">' + imgHtml(f, 'sm') + '<div style="flex:1"><div class="fc-exp-name">' + f.name + '</div><div class="fc-exp-grp">' + f.group + ' &middot; ' + f.eff + '% efficiency</div></div><span class="fc-exp-bdg ' + bd.cls + '">' + bd.txt + '</span></div>' +
+                '<div class="fc-exp-bar"><div class="fc-exp-bar-fill ' + fc + '" style="width:' + pct + '%"></div></div>' +
+                '<div class="fc-exp-sts"><div class="fc-exp-st">Stock: <strong>' + sk + '</strong></div><div class="fc-exp-st">Price: <span class="price">' + sui(f.price) + ' SUI</span></div><div class="fc-exp-st">Subtotal: <span class="price" id="bsub-' + f.id + '">—</span></div></div>' +
+                '<div class="fc-exp-row"><div class="f"><label>Quantity</label><input type="number" id="bq-' + f.id + '" placeholder="e.g. 10" min="1" max="' + sk + '" oninput="FS.buyUpdate(\'' + f.id + '\')" onclick="event.stopPropagation()"></div><button class="btn btn-p" id="bbtn-' + f.id + '" disabled onclick="event.stopPropagation();FS.buyFuel(\'' + f.id + '\')">Buy</button></div>' +
+                '<div class="fc-exp-sub" id="btot-' + f.id + '"></div></div>';
+            h += '<div class="fc' + (sel ? ' active expanded' : '') + (empty ? ' out' : '') + '" onclick="FS.selectCard(\'' + f.id + '\')"><span class="fc-badge ' + bd.cls + '">' + bd.txt + '</span><div class="fc-pad">' + imgHtml(f, 'lg') + '<div class="fc-name">' + f.name + '</div><div class="fc-group">' + f.group + ' &middot; ' + f.eff + '% eff.</div><div class="fc-bar"><div class="fc-fill ' + fc + '" style="width:' + pct + '%"></div></div><div class="fc-qty"><strong>' + sk + '</strong> unit' + (sk === 1 ? '' : 's') + ' in stock</div><div class="fc-price">' + (empty ? 'Out of stock' : sui(f.price) + ' SUI/unit') + '</div></div>' + expanded + '</div>';
+        });
+        g.innerHTML = h;
+    }
+
+    function renderDeliverGrid() {
+        var picker = el('deliverPicker'), panel = el('deliverPanel'), rate = selDel ? payoutRate(selDel) : 0;
+        picker.innerHTML = FUELS.map(function(f) {
+            var sk = S.station.stock[f.id] || 0, selected = selDel === f.id, fuelRate = payoutRate(f.id);
+            var icon = f.icon ? '<img src="' + f.icon + '" class="deliver-btn-icon" alt="' + f.name + '" onerror="this.outerHTML=\'<div class=&quot;deliver-btn-noimg&quot;></div>\'">' : '<div class="deliver-btn-noimg"></div>';
+            return '<button class="deliver-btn' + (selected ? ' active' : '') + '" onclick="FS.selectCard(\'' + f.id + '\')"><div class="deliver-btn-top">' + icon + '<div class="deliver-btn-name">' + f.name + '</div></div><div class="deliver-btn-meta">Stock: ' + sk + ' &middot; Rate: ' + (fuelRate > 0 ? sui(fuelRate) : '—') + ' SUI</div></button>';
+        }).join('');
+        if (!selDel) { panel.innerHTML = '<div class="deliver-empty">Select a fuel type above to view delivery details, payout rate, and estimated earnings.</div>'; return; }
+        var f = fuelById(selDel), sk = S.station.stock[f.id] || 0, pct = stockPct(f.id), fc = stockClass(pct), bd = badgeInfo(sk);
+        var iconLg = f.icon ? '<img src="' + f.icon + '" class="fc-exp-img" alt="' + f.name + '" onerror="this.outerHTML=\'<div class=&quot;fc-exp-noimg&quot;></div>\'">' : '<div class="fc-exp-noimg"></div>';
+        panel.innerHTML = '<div class="deliver-panel"><div class="deliver-head">' + iconLg + '<div class="deliver-head-copy"><div class="deliver-title">' + f.name + '</div><div class="deliver-sub">' + f.group + ' &middot; ' + f.eff + '% efficiency</div></div><span class="deliver-badge ' + bd.cls + '">' + bd.txt + '</span></div><div class="fc-exp-bar"><div class="fc-exp-bar-fill ' + fc + '" style="width:' + pct + '%"></div></div><div class="deliver-stats"><div class="deliver-stat"><div class="k">Station Stock</div><div class="v">' + sk + ' units</div></div><div class="deliver-stat"><div class="k">Payout Rate</div><div class="v green">' + (rate > 0 ? sui(rate) : '—') + ' SUI/unit</div></div><div class="deliver-stat"><div class="k">Est. Payout</div><div class="v green" id="dsub-' + f.id + '">—</div></div><div class="deliver-stat"><div class="k">Status</div><div class="v">' + bd.txt + '</div></div></div><div class="deliver-input"><div class="f"><label>Quantity</label><input type="number" id="dq-' + f.id + '" placeholder="e.g. 50" min="1" oninput="FS.deliverUpdate(\'' + f.id + '\')"></div><button class="btn btn-g" id="dbtn-' + f.id + '" disabled onclick="FS.deliverFuel(\'' + f.id + '\')">Deliver</button></div><div class="deliver-est" id="dtot-' + f.id + '"></div></div>';
+    }
+
+    async function fetchContractState() {
+        if (!CFG.configObjectId || !CFG.packageId) return;
+        try {
+            var client = await getClient();
+            var dynFields = await client.getDynamicFields({ parentId: CFG.configObjectId });
+            var allFields = dynFields.data || [];
+            for (var i = 0; i < allFields.length; i++) {
+                var field = allFields[i];
+                try {
+                    var obj = await client.getObject({ id: field.objectId, options: { showContent: true } });
+                    var content = obj.data && obj.data.content;
+                    if (!content || !content.fields) continue;
+                    var val = content.fields.value; if (!val) continue;
+                    var fields = val.fields || val;
+                    if (fields.operator_cut !== undefined && fields.fuel_type_ids !== undefined) {
+                        S.station.operatorCut = Number(fields.operator_cut);
+                        S.live.stationOwner = fields.owner; S.live.stationActive = fields.active; S.live.configuredFuels = (fields.fuel_type_ids || []).map(String);
+                    } else if (fields.price_per_unit !== undefined && fields.escrow !== undefined) {
+                        var keyFields = content.fields.name, fuelTypeId = null;
+                        if (keyFields && keyFields.value && keyFields.value.fields) fuelTypeId = String(keyFields.value.fields.fuel_type_id);
+                        else if (keyFields && keyFields.fields) fuelTypeId = String(keyFields.fields.fuel_type_id);
+                        if (fuelTypeId && fuelById(fuelTypeId)) {
+                            var pool = fuelPool(fuelTypeId);
+                            var escrowVal = fields.escrow && typeof fields.escrow === 'object' ? Number(fields.escrow.fields ? fields.escrow.fields.value : fields.escrow.value || 0) : Number(fields.escrow || 0);
+                            pool.escrow = escrowVal / 1e9;
+                            pool.windowRevenue = Number(fields.window_revenue || 0) / 1e9;
+                            pool.windowFuelSold = Number(fields.window_fuel_sold || 0);
+                            pool.windowDeliveries = Number(fields.window_deliveries || 0);
+                            pool.totalRevenue = Number(fields.total_revenue || 0) / 1e9;
+                            pool.totalFuelSold = Number(fields.total_fuel_sold || 0);
+                            pool.totalDelivered = Number(fields.total_fuel_delivered || 0);
+                            pool.totalPaidRunners = Number(fields.total_paid_runners || 0) / 1e9;
+                            var ff = fuelById(fuelTypeId); if (ff) ff.price = Number(fields.price_per_unit || 0) / 1e9;
+                        }
+                    }
+                } catch (innerErr) { console.warn('[fuel-station] dynamic field read failed', field.objectId, innerErr); }
+            }
+            S.live.contractSync = new Date().toISOString();
+            S.live.contractError = '';
+            saveState(); renderStats(); renderBuyGrid(); renderDeliverGrid(); renderWallet();
+        } catch (e) {
+            console.warn('[fuel-station] contract read failed', e);
+            S.live.contractError = (e && e.message) || 'Contract read failed';
+            renderWallet();
+        }
+    }
+
+    function applyLiveInventory(inv) {
+        if (!inv) return;
+        FUELS.forEach(function(f) { S.station.stock[f.id] = Number(inv[f.id] || 0); });
+        S.live.lastSync = new Date().toISOString();
+        S.live.inventorySource = 'rpc';
+        S.live.syncError = '';
+        saveState(); renderStats(); renderBuyGrid(); renderDeliverGrid();
+    }
+
+    function extractFuelInvFromNode(node, out) {
+        if (!node || typeof node !== 'object') return;
+        if (Array.isArray(node)) {
+            node.forEach(function(n) { extractFuelInvFromNode(n, out); });
+            return;
+        }
+        var fields = node.fields || node;
+        if (fields && fields.key !== undefined && fields.value !== undefined) {
+            var typeId = String(fields.key);
+            var vv = fields.value && (fields.value.fields || fields.value);
+            var qty = Number((vv && (vv.quantity || vv.amount || vv.value)) || 0);
+            if (FUELS.some(function(f) { return f.id === typeId; }) && qty > 0) out[typeId] = Math.max(Number(out[typeId] || 0), qty);
+        }
+        Object.keys(fields).forEach(function(k) { extractFuelInvFromNode(fields[k], out); });
+    }
+
+    function parseInventoryObject(invObj) {
+        var out = {};
+        var contents = (((((invObj || {}).data || {}).content || {}).fields || {}).value || {}).fields;
+        var items = (contents && contents.items && contents.items.fields && contents.items.fields.contents) || [];
+        items.forEach(function(entry) {
+            var ef = entry && entry.fields ? entry.fields : {};
+            var val = ef.value && (ef.value.fields || ef.value) || {};
+            var typeId = String(val.type_id || ef.key || '');
+            var qty = Number(val.quantity || 0);
+            if (FUELS.some(function(f) { return f.id === typeId }) && qty >= 0) out[typeId] = qty;
+        });
+        return out;
+    }
+
+    async function loadOwnerInventoryRaw() {
+        var client = await getClient();
+
+        // Resolve fresh owner cap from the current character object.
+        var charId = String((S.wallet && S.wallet.characterId) || '');
+        if (!charId) return {};
+        var charObj = await client.getObject({ id: charId, options: { showContent: true } });
+        var cFields = ((((charObj || {}).data || {}).content || {}).fields || {});
+        var ownerCapId = String(cFields.owner_cap_id || '');
+        if (!ownerCapId) return {};
+
+        var dynFields = await client.getDynamicFields({ parentId: CFG.ssuId });
+        var rows = dynFields.data || [];
+        var inventoryField = rows.find(function(f) {
+            return f && f.name && String(f.name.value) === ownerCapId;
+        });
+        if (!inventoryField) return {};
+
+        var invObj = await client.getObject({ id: inventoryField.objectId, options: { showContent: true } });
+        return parseInventoryObject(invObj);
+    }
+
+    async function loadOpenInventoryRaw() {
+        var client = await getClient();
+        if (!CFG.ssuOpenInventoryId) return {};
+        var openObj = await client.getObject({ id: CFG.ssuOpenInventoryId, options: { showContent: true } });
+        return parseInventoryObject(openObj);
+    }
+
+    async function fetchSSUInventory(showSpinner, applyToLiveState) {
+        ssuInv = null;
+        el('depLoading').style.display = '';
+        el('depInvRow').style.display = 'none';
+        el('depEmpty').style.display = 'none';
+        var btn = document.querySelector('.btn-refresh');
+        if (showSpinner && btn) btn.classList.add('spinning');
+
+        try {
+            var ownerInv = await loadOwnerInventoryRaw();
+            ssuInv = ownerInv;
+            if (applyToLiveState) {
+                var openInv = await loadOpenInventoryRaw();
+                applyLiveInventory(openInv);
+            }
+        } catch (e) {
+            console.warn('[fuel-station] inventory fetch failed', e);
+            S.live.syncError = (e && e.message) || 'SSU inventory fetch failed';
+            S.live.inventorySource = 'mock';
+            ssuInv = {};
+        }
+
+        renderSSUInventory();
+        renderWallet();
+        if (btn) btn.classList.remove('spinning');
+    }
+
+    function renderSSUInventory() {
+        el('depLoading').style.display = 'none';
+        var invRow = el('depInvRow'), empty = el('depEmpty');
+        var hasFuel = FUELS.some(function(f) { return ssuInv && Number(ssuInv[f.id] || 0) > 0; });
+        if (!hasFuel) { invRow.style.display = 'none'; empty.style.display = ''; return; }
+        empty.style.display = 'none'; invRow.style.display = '';
+        var grid = el('ssuInvGrid');
+        grid.innerHTML = FUELS.map(function(f) {
+            var qty = Number((ssuInv && ssuInv[f.id]) || 0); if (qty <= 0) return '';
+            var sel = selDepFuel === f.id;
+            return '<div class="dep-fuel-item' + (sel ? ' active' : '') + '" onclick="FS.selDepFuel(\'' + f.id + '\')"><div class="dep-fuel-name">' + f.name + '</div><div class="dep-fuel-meta">' + f.group + ' &middot; ' + f.eff + '% eff.</div><div class="dep-fuel-stock">In SSU: ' + qty + '</div></div>';
+        }).join('');
+        var selName = el('depSelName'), depQty = el('depQty'), btnDepFuel = el('btnDepFuel');
+        if (selDepFuel) {
+            var f = fuelById(selDepFuel), qty = Number((ssuInv && ssuInv[selDepFuel]) || 0);
+            selName.textContent = f ? f.name : '—';
+            selName.style.color = 'var(--text-bright)';
+            depQty.max = qty || '';
+        } else {
+            selName.textContent = 'Select fuel'; selName.style.color = 'var(--text-dim)'; depQty.value = ''; depQty.max = '';
+        }
+        btnDepFuel.disabled = !S.wallet.connected;
+    }
+
+    function selectDepositFuel(id) { selDepFuel = selDepFuel === id ? null : id; renderSSUInventory(); }
+    function depQtyUpdate() { var qty = parseInt(el('depQty') && el('depQty').value, 10) || 0; el('btnDepFuel').disabled = !S.wallet.connected || !selDepFuel || qty <= 0 || qty > Number((ssuInv && ssuInv[selDepFuel]) || 0); }
+
+    function openBuyModal() {
+        if (!pendingBuy) return;
+        var f = fuelById(pendingBuy.fuelId), body = el('deliverModalBody');
+        el('deliverModalTitle').textContent = 'Confirm Purchase';
+        el('deliverModalSub').textContent = 'Review the purchase before continuing.';
+        body.innerHTML = '<div class="confirm-grid"><div class="confirm-item"><div class="k">Fuel</div><div class="v">' + f.name + '</div></div><div class="confirm-item"><div class="k">Quantity</div><div class="v">' + pendingBuy.qty + ' units</div></div><div class="confirm-item"><div class="k">Destination</div><div class="v">Owned on-chain inventory</div></div><div class="confirm-item"><div class="k">Total</div><div class="v green">' + sui(pendingBuy.total) + ' SUI</div></div></div><div class="confirm-note">Buying fuel does <strong>not</strong> place it directly into your live game inventory. The current contract buys from station open inventory and deposits into your <strong>owned on-chain inventory</strong>. After confirmation, use the Buy Result block to collect it into game inventory when the collection path is configured.</div><div class="confirm-actions"><button class="btn btn-ghost" onclick="FS.closeDeliverModal()">Cancel</button><button class="btn btn-p" onclick="FS.confirmBuyFlow()">Confirm Buy</button></div>'; 
+        el('deliverModal').classList.add('show');
+    }
+
+    function openDeliverModal() {
+        if (!pendingDelivery) return;
+        var f = fuelById(pendingDelivery.fuelId), body = el('deliverModalBody');
+        el('deliverModalTitle').textContent = 'Confirm Delivery';
+        el('deliverModalSub').textContent = 'Review the delivery before continuing.';
+        body.innerHTML = '<div class="confirm-grid"><div class="confirm-item"><div class="k">Fuel</div><div class="v">' + f.name + '</div></div><div class="confirm-item"><div class="k">Quantity</div><div class="v">' + pendingDelivery.qty + ' units</div></div><div class="confirm-item"><div class="k">Destination</div><div class="v">Station SSU</div></div><div class="confirm-item"><div class="k">Estimated Payout</div><div class="v green">' + (pendingDelivery.payout > 0 ? sui(pendingDelivery.payout) + ' SUI' : 'Requires gameplay context') + '</div></div></div><div class="confirm-note">Delivering fuel on-chain requires a resolvable Character + OwnerCap context, typically through in-game EVE Vault. If that context exists, this modal will sign, submit, wait for digest, then refresh.</div><div class="confirm-actions"><button class="btn btn-ghost" onclick="FS.closeDeliverModal()">Cancel</button><button class="btn btn-g" onclick="FS.confirmDeliverFlow()">Confirm Delivery</button></div>';
+        el('deliverModal').classList.add('show');
+    }
+
+    function setModalProcessing(title, sub, steps) {
+        el('deliverModalTitle').textContent = title;
+        el('deliverModalSub').textContent = sub;
+        el('deliverModalBody').innerHTML = '<div class="confirm-status">' + steps.map(function(step, idx) { return '<div class="status-row ' + (idx === 0 ? 'active' : '') + '" id="modal-step-' + idx + '"><span class="status-dot"></span><span>' + step + '</span></div>'; }).join('') + '</div>';
+        steps.forEach(function(_, idx) {
+            setTimeout(function() {
+                var row = el('modal-step-' + idx); if (!row) return;
+                row.classList.remove('active'); row.classList.add('done');
+                var next = el('modal-step-' + (idx + 1)); if (next) next.classList.add('active');
+            }, idx * 700 + 450);
+        });
+    }
+
+    function closeDeliverModal() { el('deliverModal').classList.remove('show'); }
+
+    async function depositFuel() {
+        if (txBusy) { toast('Transaction already in progress…', 'i'); return; }
+        var qty = parseInt(el('depQty') && el('depQty').value, 10) || 0;
+        if (!selDepFuel || qty <= 0) { return; }
+        if (!S.wallet.connected) { toast('Connect wallet first', 'e'); return; }
+        if (!S.wallet.hasCharacter || !S.wallet.hasOwnerCap) {
+            toast('This wallet is connected, but gameplay context is missing (Character + OwnerCap). Open via in-game EVE Vault and reconnect.', 'e');
+            return;
+        }
+        var inSSU = Number((ssuInv && ssuInv[selDepFuel]) || 0);
+        if (qty > inSSU) { toast('Only ' + inSSU + ' in SSU', 'e'); return; }
+        var f = fuelById(selDepFuel), btn = el('btnDepFuel');
+        btn.disabled = true; btn.textContent = 'Donating...';
+        try {
+            var digest3 = await executeTxFlow({
+                label: 'donate_fuel',
+                maxAttempts: 3,
+                beforeRetry: async function() { await refreshAll(); },
+                build: function() { return buildDonateFuelTx(selDepFuel, qty); }
+            });
+            recordTx({ type: 'donation', fuelId: selDepFuel, fuelName: f.name, quantity: qty, total: 0, digest: digest3, runnerPayout: 0 });
+            toast('Fuel donated to station: ' + shortId(digest3), 's');
+            selDepFuel = null;
+            if (el('depQty')) el('depQty').value = '';
+            await refreshAll();
+        } catch (e) {
+            console.error(e);
+            if (isVersionConflictError(e)) await refreshAll();
+            toast(mapTxError(e), isVersionConflictError(e) ? 'i' : 'e');
+        } finally {
+            btn.textContent = 'Donate Fuel';
+            depQtyUpdate();
+        }
+    }
+
+    function tabSwitch(name) {
+        currentTab = name; selBuy = null; selDel = null; selDepFuel = null;
+        document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+        document.querySelector('.tab[data-tab="' + name + '"]').classList.add('active');
+        document.querySelectorAll('.tc').forEach(function(c) { c.classList.remove('active'); });
+        el('tab-' + name).classList.add('active');
+        renderWallet(); renderStats(); renderBuyGrid(); renderDeliverGrid();
+        if (name === 'deposit') fetchSSUInventory(false, false);
+    }
+
+    async function refreshAll() {
+        await Promise.allSettled([fetchSSUInventory(false, true), fetchContractState(), refreshWalletBalance()]);
+        renderWallet(); renderStats(); renderBuyGrid(); renderDeliverGrid();
+    }
+
+    function startAutoRefresh() {
+        if (autoRefreshTimer) return;
+        autoRefreshTimer = setInterval(function() {
+            if (document.hidden) return;
+            refreshAll();
+        }, CFG.refreshMs);
+        document.addEventListener('visibilitychange', function() { if (!document.hidden) refreshAll(); });
+    }
+
+    async function init() {
+        renderWallet(); renderStats(); renderBuyGrid(); renderDeliverGrid();
+        try {
+            var wallets = await discoverWallets(6000);
+            var wallet = pickWallet(wallets);
+            if (wallet) {
+                walletInstance = wallet;
+                if (wallet.accounts && wallet.accounts.length) setConnected(wallet.accounts[0].address, wallet.name, wallet, wallet.accounts[0]);
+            }
+        } catch (e) { console.warn('[fuel-station] wallet discovery failed', e); }
+        await refreshAll();
+        startAutoRefresh();
+    }
+
+    // In-game browser sessions are ephemeral: clear wallet state when tab/page closes.
+    window.addEventListener('pagehide', function() {
+        if (S.wallet && S.wallet.connected) disconnectWallet(true);
+    });
+    window.addEventListener('beforeunload', function() {
+        if (S.wallet && S.wallet.connected) disconnectWallet(true);
+    });
+
+    init();
+
+    return {
+        connect: connect,
+        reset: resetAll,
+        tab: tabSwitch,
+        selectCard: selectCard,
+        selDepFuel: selectDepositFuel,
+        buyFuel: buyFuel,
+        deliverFuel: deliverFuel,
+        buyUpdate: buyUpdate,
+        deliverUpdate: deliverUpdate,
+        depQtyUpdate: depQtyUpdate,
+        depositFuel: depositFuel,
+        refreshSSU: function() { fetchSSUInventory(true, false); },
+        closeDeliverModal: closeDeliverModal,
+        confirmDeliverFlow: confirmDeliverFlow,
+        confirmBuyFlow: confirmBuyFlow
+    };
+})();
+</script>
+</body>
+</html>
