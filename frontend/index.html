@@ -479,6 +479,13 @@ var FS = (function() {
     function sui(n) { return Number(n || 0).toFixed(4); }
     function fuelById(id) { return FUELS.find(function(f) { return f.id === id; }); }
     function shortId(v) { return !v ? '—' : (v.slice(0, 6) + '…' + v.slice(-4)); }
+    function displayWalletName(name) {
+        var s = String(name || 'Wallet');
+        s = s.replace(/\s*\(\s*EVE\s+VAULT\s+LIKE\s*\)/ig, '');
+        s = s.replace(/EVE\s+VAULT\s+LIKE/ig, 'in-game wallet');
+        s = s.replace(/\s{2,}/g, ' ').trim();
+        return s || 'Wallet';
+    }
     function txId() { return 'tx_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
     function toast(msg, type) {
         return; // disabled for clean demo
@@ -1462,7 +1469,7 @@ var FS = (function() {
             else if (S.wallet.status === 'ingame-wallet-ready') statusText = 'In-game wallet ready';
             else if (S.wallet.status === 'ingame-wallet-missing-context') statusText = 'In-game wallet found, but no character/owner cap yet';
             else if (S.wallet.status === 'browser-wallet') statusText = 'Browser wallet connected';
-            info.innerHTML = '<div class="lbl">Wallet</div><div class="addr">' + shortId(S.wallet.address) + '</div><div class="bal">' + sui(S.wallet.balance) + ' SUI</div><div class="lbl" style="margin-top:0.2rem">' + (S.wallet.name || 'Wallet') + ' · ' + statusText + '</div>';
+            info.innerHTML = '<div class="lbl">Wallet</div><div class="addr">' + shortId(S.wallet.address) + '</div><div class="bal">' + sui(S.wallet.balance) + ' SUI</div><div class="lbl" style="margin-top:0.2rem">' + displayWalletName(S.wallet.name) + ' · ' + statusText + '</div>';
             btn.textContent = 'Disconnect';
             btn.disabled = false;
             btn.classList.remove('btn-p');
