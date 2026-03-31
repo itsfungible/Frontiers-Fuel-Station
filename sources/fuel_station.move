@@ -258,7 +258,7 @@ public fun buy_fuel<T: key>(
         (quantity as u32),
         ctx,
     );
-    storage_unit.deposit_to_owned(
+    storage_unit.deposit_to_open_inventory(
         character,
         fuel_items,
         config::fuel_station_auth(),
