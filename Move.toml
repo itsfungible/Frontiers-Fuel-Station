@@ -3,7 +3,7 @@ name = "fuel_station"
 edition = "2024"
 
 [dependencies]
-world = { local = "../world" }
+world = { local = "../world-contracts/contracts/world" }
 
 [environments]
 testnet_stillness = "4c78adac"
