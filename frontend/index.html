@@ -375,13 +375,14 @@ var FS = (function() {
         network: 'stillness-testnet',
         walletChain: 'sui:testnet',
         rpcUrl: 'https://fullnode.testnet.sui.io:443',
-        relayUrl: '/fuel-station/relay',
-        relayToken: 'H8q7hgBrCylxGQc8dyjaWVnFmFiETorrPbABx4k84ik',
-        packageId: '0x28af3da38695b17ca32c6575b5bd83c205290858fec259ab56635e0ff1fe6511',
-        configObjectId: '0x314e55545ea374af136e1d55348e00dfa936baed6cd1a84ffdb94387618a69a7',
-        adminCapId: '0xe82505e776b95c01dc8edaaa8c050b5d3452737e3cfc1dee6a7047f3822ed0fb',
-        ssuId: '0x44ec4a2b33bf0233009e547212de846530ce89bfa82e23f4620d2912158a1f78',
-        ssuOpenInventoryId: '0xefb3f42e2e84352feafa6c1f7589725d6e72eeb64aacbaa7716dd1131d675c33',
+        relayUrl: '',
+        relayToken: '',
+        // UPDATED 2026-03-31: aligned with actual relay deployment
+        packageId: '0x948ca7c21026ef8602ab8d5708dcb3392a8477c5109bd1e7359561e5493ff5da',
+        configObjectId: '0xde33788d7f845bbb1886e529ca4936f37c69e222edd4a4bfb50fa90460dfc0b5',
+        adminCapId: '0xe43659bfc8dd281c63b63a877789ee36504750f21b2c4797a6d13b741f621a0a',
+        ssuId: '0x23fde83c0f5bb16ee90f1e13b96fbcef01b6af263a250f524bcc0740c3471eee',
+        // ssuOpenInventoryId derived dynamically from ssuId via loadOpenInventoryRaw() (reads all open inventories)
         worldPackageId: '0x28b497559d65ab320d9da4613bf2498d5946b2c0ae3597ccfda3072ce127448c',
         deployWallet: '0x3b5c796c386ef02a56a6a7cba5d508abce3005d3aad82bc87e2dda47576f6f87',
         clockId: '0x6',
@@ -413,7 +414,7 @@ var FS = (function() {
                 escrow: 0,
                 ownerRevenue: 0,
                 operatorCut: CFG.operatorCut,
-                stock: { '78437': 120, '78515': 85, '78516': 60, '84868': 45, '77818': 200, '88335': 30, '88319': 20 },
+                stock: { '78437': 0, '78515': 0, '78516': 0, '84868': 0, '77818': 0, '88335': 0, '88319': 0 },
                 fuelPools: {},
                 totalRevenue: 0,
                 totalFuelSold: 0,
@@ -479,6 +480,33 @@ var FS = (function() {
     function sui(n) { return Number(n || 0).toFixed(4); }
     function fuelById(id) { return FUELS.find(function(f) { return f.id === id; }); }
     function shortId(v) { return !v ? '—' : (v.slice(0, 6) + '…' + v.slice(-4)); }
+
+    // Find the open-inventory dynamic-field key for an SSU by reading the SSU's
+    // dynamic fields and picking the one that is NOT the owner's OwnerCap-based inventory.
+    async function deriveOpenInventoryKey(ssuId) {
+        if (!ssuId) return null;
+        try {
+            var client = await getClient();
+            var ssuObj = await client.getObject({ id: ssuId, options: { showContent: true } });
+            var ssuFields = ((((ssuObj || {}).data || {}).content || {}).fields || {});
+            var ownerCapId = String(ssuFields.owner_cap_id || '');
+            var dynFields = await client.getDynamicFields({ parentId: ssuId });
+            var rows = dynFields.data || [];
+            // The open-inventory is the dynamic field whose name is NOT the owner's cap ID.
+            // Owner-cap-based inventories use the owner_cap_id (a Sui object ID) as the key.
+            // The open-inventory uses a raw address (blake2b-derived) as the key.
+            for (var i = 0; i < rows.length; i++) {
+                var nameVal = rows[i] && rows[i].name && String(rows[i].name.value || '');
+                if (nameVal && nameVal !== ownerCapId) {
+                    return nameVal;
+                }
+            }
+            return null;
+        } catch (e) {
+            console.warn('[fuel-station] deriveOpenInventoryKey failed', e);
+            return null;
+        }
+    }
     function displayWalletName(name) {
         var s = String(name || 'Wallet');
         s = s.replace(/\s*\(\s*EVE\s+VAULT\s+LIKE\s*\)/ig, '');
@@ -488,7 +516,13 @@ var FS = (function() {
     }
     function txId() { return 'tx_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
     function toast(msg, type) {
-        return; // disabled for clean demo
+        var c = el('toasts'); if (!c) return;
+        var t = document.createElement('div');
+        var cls = type === 's' ? 'toast-s' : type === 'e' ? 'toast-e' : 'toast-i';
+        t.className = 'toast ' + cls;
+        t.textContent = msg;
+        c.appendChild(t);
+        setTimeout(function() { t.style.opacity = '0'; t.style.transition = 'opacity 0.3s'; setTimeout(function() { t.remove(); }, 300); }, 5000);
     }
     function isDemoMode() { return CFG.mode === 'demo'; }
     function isLiveMode() { return CFG.mode === 'live'; }
@@ -790,12 +824,26 @@ var FS = (function() {
                     return result.digest;
                 } catch (e) {
                     lastErr = e;
+                    // If direct signing failed and relay is available, try relay fallback
+                    if (opts.relayAction && CFG.relayUrl && CFG.relayToken) {
+                        console.warn('[fuel-station] direct sign failed, trying relay:', errorMessage(e));
+                        try {
+                            var relayResult = await relayExecute(opts.relayAction, opts.relayFuelId, opts.relayQty);
+                            if (relayResult && relayResult.digest) {
+                                toast('Executed via relay: ' + shortId(relayResult.digest), 's');
+                                return relayResult.digest;
+                            }
+                        } catch (relayErr) {
+                            console.warn('[fuel-station] relay also failed:', relayErr);
+                            lastErr = e; // preserve original error
+                        }
+                    }
                     if (i < attempts - 1 && (isVersionConflictError(e) || isRetriableWalletError(e))) {
                         if (isRetriableWalletError(e)) await reconnectWalletInstance(S.wallet.address);
                         await new Promise(function(r) { setTimeout(r, 1200 + (i * 600)); });
                         continue;
                     }
-                    throw e;
+                    throw lastErr || new Error('Transaction failed');
                 }
             }
             throw lastErr || new Error('Transaction failed');
@@ -1031,14 +1079,31 @@ var FS = (function() {
         var ssuFields = ((((ssuObj || {}).data || {}).content || {}).fields || {});
         var invKeys = (ssuFields.inventory_keys || []).map(function(k){ return String(k); });
 
-        // CRITICAL: prefer the connected player's owner cap when present.
-        // Using SSU default owner_cap_id can route purchases into the wrong inventory bucket.
-        var preferredOwnerCap = String((S.wallet && S.wallet.ownerCapId) || '');
+        // Resolve the player's actual OwnerCap<StorageUnit> by checking which inventory key
+        // is owned by the current Character. Falling back to invKeys[0] can silently select
+        // the SSU owner's cap, which breaks follow-up reads/txs for other players.
         var ownerCapId = null;
-        if (preferredOwnerCap && invKeys.indexOf(preferredOwnerCap) >= 0) {
-            ownerCapId = preferredOwnerCap;
+        var charObj = await client.getObject({ id: characterId, options: { showContent: true } });
+        var charFields = ((((charObj || {}).data || {}).content || {}).fields || {});
+        var characterOwnerCapId = String(charFields.owner_cap_id || '');
+
+        if (characterOwnerCapId && invKeys.indexOf(characterOwnerCapId) >= 0) {
+            ownerCapId = characterOwnerCapId;
         } else {
-            ownerCapId = (invKeys && invKeys.length ? invKeys[0] : null) || ssuFields.owner_cap_id || null;
+            for (var ik = 0; ik < invKeys.length; ik++) {
+                try {
+                    var maybeCap = await client.getObject({ id: invKeys[ik], options: { showOwner: true, showType: true } });
+                    var owner = maybeCap && maybeCap.data && maybeCap.data.owner;
+                    if (owner && owner.ObjectOwner === characterId) {
+                        ownerCapId = invKeys[ik];
+                        break;
+                    }
+                } catch (capErr) {}
+            }
+        }
+
+        if (!ownerCapId) {
+            ownerCapId = characterOwnerCapId || (invKeys && invKeys.length ? invKeys[0] : null) || ssuFields.owner_cap_id || null;
         }
         var ownerCapRef = null;
         if (ownerCapId) {
@@ -1315,12 +1380,25 @@ var FS = (function() {
         }
         setModalProcessing('Processing Buy', 'Signing and submitting on-chain transaction…', ['Sign transaction in in-game wallet', 'Submitting buy_fuel', 'Waiting for chain confirmation']);
         try {
-            var digest = await executeTxFlow({
-                label: 'buy_fuel',
-                maxAttempts: 3,
-                beforeRetry: async function() { await refreshWalletBalance(); },
-                build: function() { return buildBuyFuelTx(pendingBuy.fuelId, pendingBuy.qty); }
-            });
+            var digest = null;
+            // Try relay first if available, then fall back to direct wallet
+            try {
+                var relayResult = await relayExecute('buy', pendingBuy.fuelId, pendingBuy.qty);
+                digest = relayResult && relayResult.digest;
+            } catch (relayErr) {
+                console.warn('[fuel-station] buy relay unavailable, falling back to direct wallet tx', relayErr);
+            }
+            if (!digest) {
+                digest = await executeTxFlow({
+                    label: 'buy_fuel',
+                    maxAttempts: 3,
+                    beforeRetry: async function() { await refreshWalletBalance(); },
+                    build: function() { return buildBuyFuelTx(pendingBuy.fuelId, pendingBuy.qty); },
+                    relayAction: 'buy',
+                    relayFuelId: pendingBuy.fuelId,
+                    relayQty: pendingBuy.qty
+                });
+            }
             recordTx({ type: 'buy', fuelId: pendingBuy.fuelId, fuelName: f.name, quantity: pendingBuy.qty, total: pendingBuy.total, digest: digest, runnerPayout: 0 });
             pendingBuy = null;
             closeDeliverModal();
@@ -1604,33 +1682,44 @@ var FS = (function() {
 
     function parseInventoryObject(invObj) {
         var out = {};
-        var contents = (((((invObj || {}).data || {}).content || {}).fields || {}).value || {}).fields;
-        var items = (contents && contents.items && contents.items.fields && contents.items.fields.contents) || [];
-        items.forEach(function(entry) {
-            var ef = entry && entry.fields ? entry.fields : {};
-            var val = ef.value && (ef.value.fields || ef.value) || {};
-            var typeId = String(val.type_id || ef.key || '');
-            var qty = Number(val.quantity || 0);
-            if (FUELS.some(function(f) { return f.id === typeId }) && qty >= 0) out[typeId] = qty;
-        });
+        function add(typeId, qty) {
+            typeId = String(typeId || '');
+            qty = Number(qty || 0);
+            if (!typeId || !FUELS.some(function(f) { return f.id === typeId; }) || qty <= 0) return;
+            out[typeId] = Number(out[typeId] || 0) + qty;
+        }
+        function walk(node) {
+            if (!node || typeof node !== 'object') return;
+            if (Array.isArray(node)) { node.forEach(walk); return; }
+            var fields = node.fields || node;
+            var key = fields.key;
+            var value = fields.value && (fields.value.fields || fields.value);
+            if (key !== undefined && value !== undefined) {
+                add(value.type_id || key, value.quantity || value.amount || value.value || 0);
+            }
+            if (fields.type_id !== undefined) {
+                add(fields.type_id, fields.quantity || fields.amount || fields.value || 0);
+            }
+            Object.keys(fields).forEach(function(k) { walk(fields[k]); });
+        }
+        try {
+            var root = ((((invObj || {}).data || {}).content || {}).fields || {});
+            walk(root);
+        } catch (e) {
+            console.warn('[fuel-station] parseInventoryObject failed', e);
+        }
         return out;
     }
 
     async function loadOwnerInventoryRaw() {
-        var client = await getClient();
+        var ctx = await getPlayerContext();
+        if (!ctx || !ctx.ownerCapId) return {};
 
-        // Resolve fresh owner cap from the current character object.
-        var charId = String((S.wallet && S.wallet.characterId) || '');
-        if (!charId) return {};
-        var charObj = await client.getObject({ id: charId, options: { showContent: true } });
-        var cFields = ((((charObj || {}).data || {}).content || {}).fields || {});
-        var ownerCapId = String(cFields.owner_cap_id || '');
-        if (!ownerCapId) return {};
-
+        var client = ctx.client || await getClient();
         var dynFields = await client.getDynamicFields({ parentId: CFG.ssuId });
         var rows = dynFields.data || [];
         var inventoryField = rows.find(function(f) {
-            return f && f.name && String(f.name.value) === ownerCapId;
+            return f && f.name && String(f.name.value) === String(ctx.ownerCapId);
         });
         if (!inventoryField) return {};
 
@@ -1639,10 +1728,27 @@ var FS = (function() {
     }
 
     async function loadOpenInventoryRaw() {
+        // Read ALL open-inventory dynamic fields on the SSU (everything except the
+        // owner-cap-based inventory) and aggregate fuel quantities across them.
         var client = await getClient();
-        if (!CFG.ssuOpenInventoryId) return {};
-        var openObj = await client.getObject({ id: CFG.ssuOpenInventoryId, options: { showContent: true } });
-        return parseInventoryObject(openObj);
+        var ssuObj = await client.getObject({ id: CFG.ssuId, options: { showContent: true } });
+        var ssuFields = ((((ssuObj || {}).data || {}).content || {}).fields || {});
+        var inventoryKeys = (ssuFields.inventory_keys || []).map(function(k) { return String(k); });
+        var dynFields = await client.getDynamicFields({ parentId: CFG.ssuId });
+        var rows = dynFields.data || [];
+        var aggregated = {};
+        for (var i = 0; i < rows.length; i++) {
+            var nameVal = rows[i] && rows[i].name && String(rows[i].name.value || '');
+            if (!nameVal || inventoryKeys.indexOf(nameVal) >= 0) continue;
+            try {
+                var invObj = await client.getObject({ id: rows[i].objectId, options: { showContent: true } });
+                var parsed = parseInventoryObject(invObj);
+                for (var tid in parsed) {
+                    aggregated[tid] = (aggregated[tid] || 0) + parsed[tid];
+                }
+            } catch (e) { /* skip non-inventory dynamic fields */ }
+        }
+        return aggregated;
     }
 
     async function fetchSSUInventory(showSpinner, applyToLiveState) {
@@ -1682,7 +1788,7 @@ var FS = (function() {
         grid.innerHTML = FUELS.map(function(f) {
             var qty = Number((ssuInv && ssuInv[f.id]) || 0); if (qty <= 0) return '';
             var sel = selDepFuel === f.id;
-            return '<div class="dep-fuel-item' + (sel ? ' active' : '') + '" onclick="FS.selDepFuel(\'' + f.id + '\')"><div class="dep-fuel-name">' + f.name + '</div><div class="dep-fuel-meta">' + f.group + ' &middot; ' + f.eff + '% eff.</div><div class="dep-fuel-stock">In SSU: ' + qty + '</div></div>';
+            return '<div class="dep-fuel-item' + (sel ? ' active' : '') + '" onclick="FS.selDepFuel(\'' + f.id + '\')"><div class="dep-fuel-name">' + f.name + '</div><div class="dep-fuel-meta">' + f.group + ' &middot; ' + f.eff + '% eff.</div><div class="dep-fuel-stock">Owned inventory: ' + qty + '</div></div>';
         }).join('');
         var selName = el('depSelName'), depQty = el('depQty'), btnDepFuel = el('btnDepFuel');
         if (selDepFuel) {
@@ -1704,7 +1810,7 @@ var FS = (function() {
         var f = fuelById(pendingBuy.fuelId), body = el('deliverModalBody');
         el('deliverModalTitle').textContent = 'Confirm Purchase';
         el('deliverModalSub').textContent = 'Review the purchase before continuing.';
-        body.innerHTML = '<div class="confirm-grid"><div class="confirm-item"><div class="k">Fuel</div><div class="v">' + f.name + '</div></div><div class="confirm-item"><div class="k">Quantity</div><div class="v">' + pendingBuy.qty + ' units</div></div><div class="confirm-item"><div class="k">Destination</div><div class="v">Owned on-chain inventory</div></div><div class="confirm-item"><div class="k">Total</div><div class="v green">' + sui(pendingBuy.total) + ' SUI</div></div></div><div class="confirm-note">Buying fuel does <strong>not</strong> place it directly into your live game inventory. The current contract buys from station open inventory and deposits into your <strong>owned on-chain inventory</strong>. After confirmation, use the Buy Result block to collect it into game inventory when the collection path is configured.</div><div class="confirm-actions"><button class="btn btn-ghost" onclick="FS.closeDeliverModal()">Cancel</button><button class="btn btn-p" onclick="FS.confirmBuyFlow()">Confirm Buy</button></div>'; 
+        body.innerHTML = '<div class="confirm-grid"><div class="confirm-item"><div class="k">Fuel</div><div class="v">' + f.name + '</div></div><div class="confirm-item"><div class="k">Quantity</div><div class="v">' + pendingBuy.qty + ' units</div></div><div class="confirm-item"><div class="k">Destination</div><div class="v">Owned inventory</div></div><div class="confirm-item"><div class="k">Total</div><div class="v green">' + sui(pendingBuy.total) + ' SUI</div></div></div><div class="confirm-note">Buying fuel withdraws from the station open inventory and deposits into <strong>your owned SSU inventory</strong>. After confirmation, station stock should go down and your personal SSU fuel should go up.</div><div class="confirm-actions"><button class="btn btn-ghost" onclick="FS.closeDeliverModal()">Cancel</button><button class="btn btn-p" onclick="FS.confirmBuyFlow()">Confirm Buy</button></div>'; 
         el('deliverModal').classList.add('show');
     }
 
@@ -1804,14 +1910,6 @@ var FS = (function() {
         await refreshAll();
         startAutoRefresh();
     }
-
-    // In-game browser sessions are ephemeral: clear wallet state when tab/page closes.
-    window.addEventListener('pagehide', function() {
-        if (S.wallet && S.wallet.connected) disconnectWallet(true);
-    });
-    window.addEventListener('beforeunload', function() {
-        if (S.wallet && S.wallet.connected) disconnectWallet(true);
-    });
 
     init();
 
