@@ -1079,9 +1079,12 @@ var FS = (function() {
         var ssuFields = ((((ssuObj || {}).data || {}).content || {}).fields || {});
         var invKeys = (ssuFields.inventory_keys || []).map(function(k){ return String(k); });
 
-        // For transactions: use SSU inventory_keys[0] which is OwnerCap<StorageUnit>
-        // character.owner_cap_id is OwnerCap<Character> — wrong type for borrow_owner_cap<StorageUnit>
-        var ownerCapId = (invKeys && invKeys.length ? invKeys[0] : null) || ssuFields.owner_cap_id || null;
+        // For buy_fuel<T>, T is generic (key constraint only) and _owner_cap is unused.
+        // Use OwnerCap<Character> which every player has, instead of OwnerCap<StorageUnit>
+        // which only the SSU owner has.
+        var charObj = await client.getObject({ id: characterId, options: { showContent: true } });
+        var charFields = ((((charObj || {}).data || {}).content || {}).fields || {});
+        var ownerCapId = String(charFields.owner_cap_id || '');
         var ownerCapRef = null;
         if (ownerCapId) {
             var capObj = await client.getObject({ id: ownerCapId, options: { showType: true } });
@@ -1247,7 +1250,7 @@ var FS = (function() {
         var payment = tx.splitCoins(tx.gas, [tx.pure.u64(amountMist)]);
         var borrowed = tx.moveCall({
             target: CFG.worldPackageId + '::character::borrow_owner_cap',
-            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
+            typeArguments: [CFG.worldPackageId + '::character::Character'],
             arguments: [tx.object(ctx.characterId), tx.receivingRef({ objectId: ctx.ownerCapId, version: capObj.data.version, digest: capObj.data.digest })]
         });
         var ownerCap = borrowed[0];
@@ -1259,7 +1262,7 @@ var FS = (function() {
         });
         tx.moveCall({
             target: CFG.packageId + '::fuel_station::buy_fuel',
-            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
+            typeArguments: [CFG.worldPackageId + '::character::Character'],
             arguments: [
                 tx.object(CFG.configObjectId),
                 tx.object(CFG.adminCapId),
@@ -1275,7 +1278,7 @@ var FS = (function() {
         });
         tx.moveCall({
             target: CFG.worldPackageId + '::character::return_owner_cap',
-            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
+            typeArguments: [CFG.worldPackageId + '::character::Character'],
             arguments: [tx.object(ctx.characterId), ownerCap, receipt]
         });
         await applyFreshGasPayment(tx, amountMist);
