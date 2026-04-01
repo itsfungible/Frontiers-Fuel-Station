@@ -1079,32 +1079,9 @@ var FS = (function() {
         var ssuFields = ((((ssuObj || {}).data || {}).content || {}).fields || {});
         var invKeys = (ssuFields.inventory_keys || []).map(function(k){ return String(k); });
 
-        // Resolve the player's actual OwnerCap<StorageUnit> by checking which inventory key
-        // is owned by the current Character. Falling back to invKeys[0] can silently select
-        // the SSU owner's cap, which breaks follow-up reads/txs for other players.
-        var ownerCapId = null;
-        var charObj = await client.getObject({ id: characterId, options: { showContent: true } });
-        var charFields = ((((charObj || {}).data || {}).content || {}).fields || {});
-        var characterOwnerCapId = String(charFields.owner_cap_id || '');
-
-        if (characterOwnerCapId && invKeys.indexOf(characterOwnerCapId) >= 0) {
-            ownerCapId = characterOwnerCapId;
-        } else {
-            for (var ik = 0; ik < invKeys.length; ik++) {
-                try {
-                    var maybeCap = await client.getObject({ id: invKeys[ik], options: { showOwner: true, showType: true } });
-                    var owner = maybeCap && maybeCap.data && maybeCap.data.owner;
-                    if (owner && owner.ObjectOwner === characterId) {
-                        ownerCapId = invKeys[ik];
-                        break;
-                    }
-                } catch (capErr) {}
-            }
-        }
-
-        if (!ownerCapId) {
-            ownerCapId = characterOwnerCapId || (invKeys && invKeys.length ? invKeys[0] : null) || ssuFields.owner_cap_id || null;
-        }
+        // For transactions: use SSU inventory_keys[0] which is OwnerCap<StorageUnit>
+        // character.owner_cap_id is OwnerCap<Character> — wrong type for borrow_owner_cap<StorageUnit>
+        var ownerCapId = (invKeys && invKeys.length ? invKeys[0] : null) || ssuFields.owner_cap_id || null;
         var ownerCapRef = null;
         if (ownerCapId) {
             var capObj = await client.getObject({ id: ownerCapId, options: { showType: true } });
