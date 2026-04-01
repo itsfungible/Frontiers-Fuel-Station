@@ -1101,24 +1101,75 @@ var FS = (function() {
         };
     }
 
+    async function getStorageUnitOwnerCapContext() {
+        var client = await getClient();
+
+        var profileType = CFG.worldPackageId + '::character::PlayerProfile';
+        var profiles = null;
+        try {
+            profiles = await client.getOwnedObjects({
+                owner: S.wallet.address,
+                filter: { StructType: profileType },
+                options: { showContent: true, showType: true }
+            });
+        } catch (eFilter) {
+            console.warn('[fuel-station] filtered PlayerProfile lookup failed for storage cap context, falling back to full owned scan', eFilter);
+        }
+
+        var profileObj = null;
+        if (profiles && profiles.data && profiles.data.length) {
+            profileObj = profiles.data[0] && profiles.data[0].data;
+        } else {
+            var cursor = null;
+            for (var page = 0; page < 6 && !profileObj; page++) {
+                var batch = await client.getOwnedObjects({
+                    owner: S.wallet.address,
+                    cursor: cursor,
+                    limit: 50,
+                    options: { showContent: true, showType: true }
+                });
+                var rows = batch && batch.data ? batch.data : [];
+                for (var i = 0; i < rows.length; i++) {
+                    var d = rows[i] && rows[i].data;
+                    if (d && String(d.type || '') === profileType) { profileObj = d; break; }
+                }
+                if (!batch || !batch.hasNextPage) break;
+                cursor = batch.nextCursor;
+            }
+        }
+
+        if (!profileObj) throw new Error('No PlayerProfile found for wallet ' + shortId(S.wallet.address));
+
+        var characterId = profileObj && profileObj.content && profileObj.content.fields && profileObj.content.fields.character_id;
+        if (!characterId) throw new Error('PlayerProfile found but character_id missing');
+
+        var ssuObj = await client.getObject({ id: CFG.ssuId, options: { showContent: true, showType: true } });
+        var ssuFields = ((((ssuObj || {}).data || {}).content || {}).fields || {});
+        var invKeys = (ssuFields.inventory_keys || []).map(function(k) { return String(k); });
+        var ownerCapId = String((invKeys[0] || ssuFields.owner_cap_id || ''));
+        var ownerCapRef = null;
+        if (ownerCapId) {
+            var capObj = await client.getObject({ id: ownerCapId, options: { showType: true } });
+            if (capObj && capObj.data && capObj.data.version && capObj.data.digest) {
+                ownerCapRef = { objectId: ownerCapId, version: capObj.data.version, digest: capObj.data.digest };
+            }
+        }
+
+        return {
+            client: client,
+            characterId: characterId,
+            ownerCapId: ownerCapId || '',
+            ownerCapRef: ownerCapRef
+        };
+    }
+
     async function buildDonateFuelTx(fuelId, qty) {
         const txm = await import('@mysten/sui/transactions');
         var Transaction = txm.Transaction;
-        var ctx = await getPlayerContext();
+        var ctx = await getStorageUnitOwnerCapContext();
 
-        var capObj = await ctx.client.getObject({ id: ctx.ownerCapId, options: {} });
         var tx = new Transaction();
-
-        var borrowed = tx.moveCall({
-            target: CFG.worldPackageId + '::character::borrow_owner_cap',
-            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
-            arguments: [
-                tx.object(ctx.characterId),
-                tx.receivingRef({ objectId: ctx.ownerCapId, version: capObj.data.version, digest: capObj.data.digest })
-            ]
-        });
-        var ownerCap = borrowed[0];
-        var receipt = borrowed[1];
+        var ownerCap = tx.object(ctx.ownerCapId);
 
         tx.moveCall({
             target: CFG.worldPackageId + '::storage_unit::authorize_extension',
@@ -1154,18 +1205,16 @@ var FS = (function() {
             ]
         });
 
-        tx.moveCall({
-            target: CFG.worldPackageId + '::character::return_owner_cap',
-            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
-            arguments: [tx.object(ctx.characterId), ownerCap, receipt]
-        });
-
         await applyFreshGasPayment(tx, 0);
         return { tx: tx, debug: { action: 'donate', fuelId: String(fuelId), qty: Number(qty), characterId: ctx.characterId, ownerCapId: ctx.ownerCapId, sourceInventory: CFG.ssuId, destinationOpenInventoryId: CFG.ssuOpenInventoryId } };
     }
 
     async function ensureExtensionAuthorized(ctx) {
-        var client = ctx.client;
+        var authCtx = ctx;
+        if (!authCtx || !authCtx.ownerCapId || !authCtx.ownerCapRef) {
+            authCtx = await getStorageUnitOwnerCapContext();
+        }
+        var client = authCtx.client;
         var ssuObj = await client.getObject({ id: CFG.ssuId, options: { showContent: true } });
         var ssuFields = ((((ssuObj || {}).data || {}).content || {}).fields || {});
         var extensionType = ssuFields.extension;
@@ -1175,27 +1224,12 @@ var FS = (function() {
         }
         toast('Setting up Fuel Station extension on this SSU…', 'i');
         var txm = await import('@mysten/sui/transactions');
-        var capObj = await client.getObject({ id: ctx.ownerCapId, options: {} });
         var authTx = new txm.Transaction();
-        var authBorrowed = authTx.moveCall({
-            target: CFG.worldPackageId + '::character::borrow_owner_cap',
-            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
-            arguments: [
-                authTx.object(ctx.characterId),
-                authTx.receivingRef({ objectId: ctx.ownerCapId, version: capObj.data.version, digest: capObj.data.digest })
-            ]
-        });
-        var authCap = authBorrowed[0];
-        var authReceipt = authBorrowed[1];
+        var authCap = authTx.object(authCtx.ownerCapId);
         authTx.moveCall({
             target: CFG.worldPackageId + '::storage_unit::authorize_extension',
             typeArguments: [expectedAuth],
             arguments: [authTx.object(CFG.ssuId), authCap]
-        });
-        authTx.moveCall({
-            target: CFG.worldPackageId + '::character::return_owner_cap',
-            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
-            arguments: [authTx.object(ctx.characterId), authCap, authReceipt]
         });
         await applyFreshGasPayment(authTx, 0);
         await signAndExecute(authTx);
@@ -1288,16 +1322,9 @@ var FS = (function() {
     async function buildDeliverFuelTx(fuelId, qty) {
         const txm = await import('@mysten/sui/transactions');
         var Transaction = txm.Transaction;
-        var ctx = await getPlayerContext();
-        var capObj = await ctx.client.getObject({ id: ctx.ownerCapId, options: {} });
+        var ctx = await getStorageUnitOwnerCapContext();
         var tx = new Transaction();
-        var borrowed = tx.moveCall({
-            target: CFG.worldPackageId + '::character::borrow_owner_cap',
-            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
-            arguments: [tx.object(ctx.characterId), tx.receivingRef({ objectId: ctx.ownerCapId, version: capObj.data.version, digest: capObj.data.digest })]
-        });
-        var ownerCap = borrowed[0];
-        var receipt = borrowed[1];
+        var ownerCap = tx.object(ctx.ownerCapId);
         tx.moveCall({
             target: CFG.worldPackageId + '::storage_unit::authorize_extension',
             typeArguments: [CFG.packageId + '::config::FuelStationAuth'],
@@ -1317,11 +1344,6 @@ var FS = (function() {
                 tx.pure.u64(Number(qty)),
                 tx.object(CFG.clockId)
             ]
-        });
-        tx.moveCall({
-            target: CFG.worldPackageId + '::character::return_owner_cap',
-            typeArguments: [CFG.worldPackageId + '::storage_unit::StorageUnit'],
-            arguments: [tx.object(ctx.characterId), ownerCap, receipt]
         });
         await applyFreshGasPayment(tx, 0);
         return { tx: tx, debug: { action: 'deliver', fuelId: String(fuelId), qty: Number(qty), characterId: ctx.characterId, ownerCapId: ctx.ownerCapId, stationInventoryId: CFG.ssuId } };
