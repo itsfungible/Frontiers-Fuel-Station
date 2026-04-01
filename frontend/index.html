@@ -1712,14 +1712,21 @@ var FS = (function() {
     }
 
     async function loadOwnerInventoryRaw() {
-        var ctx = await getPlayerContext();
-        if (!ctx || !ctx.ownerCapId) return {};
+        var client = await getClient();
 
-        var client = ctx.client || await getClient();
+        // deposit_to_owned() keys the recipient inventory by character.owner_cap_id(),
+        // which is distinct from the StorageUnit OwnerCap path used for tx access.
+        var charId = String((S.wallet && S.wallet.characterId) || '');
+        if (!charId) return {};
+        var charObj = await client.getObject({ id: charId, options: { showContent: true } });
+        var cFields = ((((charObj || {}).data || {}).content || {}).fields || {});
+        var ownerCapId = String(cFields.owner_cap_id || '');
+        if (!ownerCapId) return {};
+
         var dynFields = await client.getDynamicFields({ parentId: CFG.ssuId });
         var rows = dynFields.data || [];
         var inventoryField = rows.find(function(f) {
-            return f && f.name && String(f.name.value) === String(ctx.ownerCapId);
+            return f && f.name && String(f.name.value) === ownerCapId;
         });
         if (!inventoryField) return {};
 
